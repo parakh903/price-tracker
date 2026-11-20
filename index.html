@@ -39,6 +39,9 @@
             <button type="button" data-store="CW" class="store-btn px-2 py-0.5 text-xs font-medium rounded-md text-neutral-400 hover:text-white">CW</button>
             <button type="button" data-store="BOTH" class="store-btn px-2 py-0.5 text-xs font-medium rounded-md text-neutral-400 hover:text-white">Both</button>
           </div>
+          <button id="favFilterBtn" type="button" class="px-2 py-1 text-xs font-medium rounded-lg border border-amber-700/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/50 transition">
+            ★ <span class="ml-0.5 px-1.5 py-0.2 rounded-full bg-black/30 text-[10px]">0</span>
+          </button>
           <button id="sortModeBtn" type="button" class="px-2.5 py-1 text-xs font-medium rounded-lg border border-neutral-700 bg-neutral-900 text-teal-300 hover:bg-neutral-800 transition">
             Sort: Discount % &darr;
           </button>
@@ -110,6 +113,18 @@
   let storeFilter = 'ALL';
   let sortMode = 'discount';
   let chartInstance = null;
+  let favOnly = false;
+  let favorites = new Set();
+  try {
+    const savedFavs = JSON.parse(localStorage.getItem('cw_ww_favorites') || '[]');
+    if (Array.isArray(savedFavs)) favorites = new Set(savedFavs);
+  } catch (e) {}
+  function saveFavorites() {
+    try { localStorage.setItem('cw_ww_favorites', JSON.stringify(Array.from(favorites))); } catch (e) {}
+  }
+  function favKeyFor(p) {
+    return p.group ? 'group:' + p.group : 'prod:' + p.canonical;
+  }
 
   function aggregateProducts(rows, storeScope) {
     const byProd = new Map();
@@ -312,10 +327,18 @@
       btn.innerHTML = `${labelMap[k]} <span class="ml-0.5 px-1.5 py-0.2 rounded-full bg-black/30 text-[10px]">${counts[k]}</span>`;
     });
 
+    const favCount = searchAll.filter(p => favorites.has(favKeyFor(p))).length;
+    const favBtn = document.getElementById('favFilterBtn');
+    favBtn.innerHTML = `★ <span class="ml-0.5 px-1.5 py-0.2 rounded-full bg-black/30 text-[10px]">${favCount}</span>`;
+    favBtn.className = favOnly
+      ? 'px-2 py-1 text-xs font-semibold rounded-lg bg-amber-500 text-black shadow-sm transition'
+      : 'px-2 py-1 text-xs font-medium rounded-lg border border-amber-700/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/50 transition';
+
     const scopedProducts = aggregateProducts(allRows, storeFilter);
 
     const filtered = scopedProducts.filter(p => {
       if (q && !p.canonical.toLowerCase().includes(q)) return false;
+      if (favOnly && !favorites.has(favKeyFor(p))) return false;
       if (storeFilter === 'WW') return p.retailers.has('Woolworths');
       if (storeFilter === 'CW') return p.retailers.has('Chemist Warehouse');
       if (storeFilter === 'BOTH') return p.storeType === 'BOTH';
@@ -392,7 +415,7 @@
             <h3 class="text-xs font-semibold text-white leading-snug break-words">${p.canonical}</h3>
           </div>
           <div class="flex-1 min-w-0 flex flex-col justify-between gap-2">
-            <div class="flex items-center justify-end gap-1">${storeBadge}${chevron}</div>
+            <div class="flex items-center justify-end gap-1.5"><button type="button" class="fav-star-btn px-1 text-sm leading-none ${favorites.has(favKeyFor(p)) ? 'text-amber-400' : 'text-neutral-500 hover:text-amber-300'}" title="${p.group ? 'Favorite group: ' + p.group : 'Favorite product'}">${favorites.has(favKeyFor(p)) ? '★' : '☆'}</button>${storeBadge}${chevron}</div>
             <div class="grid grid-cols-2 gap-2 pt-1.5 border-t border-neutral-800">
               <div>
                 <div class="text-[10px] text-neutral-400">Now / RRP</div>
@@ -436,6 +459,17 @@
         expandedProd = p;
       }
 
+      const starBtn = card.querySelector('.fav-star-btn');
+      if (starBtn) {
+        starBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          const fk = favKeyFor(p);
+          if (favorites.has(fk)) favorites.delete(fk);
+          else favorites.add(fk);
+          saveFavorites();
+          renderAll();
+        });
+      }
       card.addEventListener('click', () => {
         selectedCanonical = (selectedCanonical === p.canonical) ? null : p.canonical;
         renderAll();
@@ -547,6 +581,11 @@
     });
   });
   styleStoreTabs();
+
+  document.getElementById('favFilterBtn').addEventListener('click', () => {
+    favOnly = !favOnly;
+    renderAll();
+  });
 
   document.getElementById('sortModeBtn').addEventListener('click', () => {
     sortMode = sortMode === 'discount' ? 'lowest' : 'discount';
