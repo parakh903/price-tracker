@@ -126,7 +126,7 @@
     const list = [];
     byProd.forEach(p => {
       const targetStore = storeScope === 'WW' ? 'Woolworths' : (storeScope === 'CW' ? 'Chemist Warehouse' : null);
-      let bestNow = Infinity, bestNowStore = '', bestRrp = 0, bestUnitPrice = '', low6m = Infinity, lowStore = '', lastLowDate = '', latestDate = '';
+      let bestNow = Infinity, bestNowStore = '', bestRrp = 0, bestUnitPrice = '', low6m = Infinity, lowStore = '', lowUnitPrice = '', lastLowDate = '', latestDate = '';
       const storeLatest = [];
       p.retailers.forEach((arr, store) => {
         arr.sort((a, b) => a.date.localeCompare(b.date));
@@ -139,6 +139,7 @@
           if (item.price < low6m || (item.price === low6m && item.date > lastLowDate)) {
             low6m = item.price;
             lowStore = store;
+            lowUnitPrice = item.unitPrice || '';
             lastLowDate = item.date;
           }
         });
@@ -180,6 +181,7 @@
         discPct,
         low6m,
         lowStore,
+        lowUnitPrice,
         predNextLabel,
         cycle: p.cycle,
         signal,
@@ -393,6 +395,7 @@
               <div class="text-right">
                 <div class="text-[10px] text-neutral-400">Lowest</div>
                 <div class="text-sm font-semibold text-emerald-300">$${p.low6m.toFixed(2)}</div>
+                ${p.lowUnitPrice ? `<div class="text-[10px] text-neutral-400 mt-0.5">${p.lowUnitPrice}</div>` : ''}
               </div>
             </div>
             <div class="flex items-center justify-between gap-2 pt-1.5 border-t border-neutral-800">
