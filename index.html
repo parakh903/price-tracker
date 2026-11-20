@@ -17,8 +17,8 @@
 <body class="bg-black text-neutral-100 min-h-screen overflow-x-hidden">
 
   <!-- Single Sticky Search & Filter Bar right at the very top -->
-  <header class="bg-neutral-950 border-b border-neutral-800 sticky top-0 z-20">
-    <div class="max-w-7xl mx-auto px-3 sm:px-6 py-2 space-y-1.5">
+  <header id="topHeader" class="bg-neutral-950/95 backdrop-blur border-b border-neutral-800 sticky top-0 z-20 transition-transform duration-200 will-change-transform">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 py-1.5 space-y-1">
       <div class="flex items-center gap-2">
         <input id="searchInput" type="search" placeholder="Search tracked products..."
           class="flex-1 min-w-0 px-3 py-1.5 text-base rounded-lg border border-neutral-700 bg-neutral-900 text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-teal-500" />
@@ -417,6 +417,11 @@
         if (storeFilter === 'WW') return item.retailer === 'Woolworths';
         if (storeFilter === 'CW') return item.retailer === 'Chemist Warehouse';
         return true;
+      }).sort((a, b) => {
+        const aHas = loggedKeys.has(`${a.canonical}::${a.retailer}`) ? 1 : 0;
+        const bHas = loggedKeys.has(`${b.canonical}::${b.retailer}`) ? 1 : 0;
+        if (aHas !== bHas) return aHas - bHas;
+        return a.canonical.localeCompare(b.canonical) || a.retailer.localeCompare(b.retailer);
       });
       document.getElementById('visibleCountLabel').textContent = `Watchlist: ${wlItems.length} link${wlItems.length === 1 ? '' : 's'}`;
       if (wlItems.length === 0) {
@@ -745,6 +750,18 @@
   } catch (e) {
     loadSheetCsv(DEFAULT_SHEET_CSV);
   }
+
+  let lastScrollY = window.scrollY;
+  const topHeader = document.getElementById('topHeader');
+  window.addEventListener('scroll', () => {
+    const curY = window.scrollY;
+    if (curY <= 40 || curY < lastScrollY) {
+      topHeader.style.transform = 'translateY(0)';
+    } else if (curY > lastScrollY + 6) {
+      topHeader.style.transform = 'translateY(-100%)';
+    }
+    lastScrollY = curY;
+  }, { passive: true });
 
   renderAll();
 })();
