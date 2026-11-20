@@ -152,7 +152,9 @@
       p.retailers.forEach((arr, store) => {
         arr.sort((a, b) => a.date.localeCompare(b.date));
         const latest = arr[arr.length - 1];
-        storeLatest.push({ store, price: latest.price, rrp: latest.rrp });
+        let storeLow = Infinity;
+        arr.forEach(item => { if (item.price < storeLow) storeLow = item.price; });
+        storeLatest.push({ store, price: latest.price, rrp: latest.rrp, low: storeLow });
         if (targetStore && store !== targetStore) return;
         if (latest.date > latestDate) latestDate = latest.date;
         if (latest.price < bestNow) { bestNow = latest.price; bestNowStore = store; bestRrp = latest.rrp; bestUnitPrice = latest.unitPrice || ''; }
@@ -570,7 +572,7 @@
               </div>
             </div>
             ${p.group ? `<div class="flex items-center justify-between gap-2 text-[10px] pt-1 border-t border-neutral-800/80 text-purple-300"><span class="truncate">${isGroupChild ? '↳ ' : ''}${p.group}</span>${isGroupTop ? `<button type="button" class="group-toggle-btn shrink-0 px-2 py-0.5 rounded bg-purple-950/80 border border-purple-700/70 text-purple-200 hover:bg-purple-900 font-semibold" data-group="${p.group.replace(/"/g, '&quot;')}">${isExpanded ? 'Hide ' + extraCount + ' &#9650;' : '+' + extraCount + ' more &#9660;'}</button>` : ''}</div>` : ''}
-            ${p.storeLatest.length > 1 ? `<div class="flex items-center justify-between text-[11px] pt-1 border-t border-neutral-800/80 text-blue-300"><span>Compare:</span><span class="font-medium">${p.storeLatest.map(x => `${x.store === 'Woolworths' ? 'WW' : 'CW'} $${x.price.toFixed(2)}`).join(' &middot; ')}</span></div>` : ''}
+            ${(() => { const other = p.storeLatest.find(x => x.store !== p.bestNowStore); return other ? `<div class="flex items-center justify-between text-[11px] pt-1 border-t border-neutral-800/80 text-neutral-300"><span class="${other.store === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300'} font-semibold">${other.store === 'Woolworths' ? 'WW' : 'CW'}</span><span>Now <strong class="text-white">$${other.price.toFixed(2)}</strong> &middot; Low <strong class="text-emerald-300">$${other.low.toFixed(2)}</strong></span></div>` : ''; })()}
           </div>
         </div>
       `;
