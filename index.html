@@ -85,20 +85,21 @@
   const DATES = ['2026-11-18', '2026-11-19'];
 
   const RAW_SPECS = [
-    ['Band-Aid Tough Strips 40 Pack', 'Chemist Warehouse', 5.99, [4.19, 4.19], 0, 'https://www.chemistwarehouse.com.au/_next/image?url=https%3A%2F%2Fstatic.chemistwarehouse.com.au%2Fams%2Fmedia%2Fpi%2F69810%2F2DF_800.jpg&w=3840&q=75', '$0.10 / strip'],
-    ['Band-Aid Tough Strips 40 Pack', 'Woolworths', 5.50, [5.50, 5.50], 0, 'https://www.chemistwarehouse.com.au/_next/image?url=https%3A%2F%2Fstatic.chemistwarehouse.com.au%2Fams%2Fmedia%2Fpi%2F69810%2F2DF_800.jpg&w=3840&q=75', '$0.14 / strip'],
-    ['Oil Garden Sweet Almond Oil 200ml', 'Chemist Warehouse', 19.99, [17.99, 17.99], 0, 'https://www.chemistwarehouse.com.au/_next/image?url=https%3A%2F%2Fstatic.chemistwarehouse.com.au%2Fams%2Fmedia%2Fpi%2F66029%2F2DF_800.jpg&w=3840&q=75', '$9.00 / 100ml'],
-    ['Oil Garden Jojoba Oil 100ml', 'Chemist Warehouse', 29.99, [26.99, 26.99], 0, 'https://www.chemistwarehouse.com.au/_next/image?url=https%3A%2F%2Fstatic.chemistwarehouse.com.au%2Fams%2Fmedia%2Fpi%2F73660%2F2DF_800.jpg&w=3840&q=75', '$26.99 / 100ml'],
-    ['OsteVit-D Vitamin D3 Liquid 50ml', 'Chemist Warehouse', 26.99, [17.49, 17.49], 0, 'https://www.chemistwarehouse.com.au/_next/image?url=https%3A%2F%2Fstatic.chemistwarehouse.com.au%2Fams%2Fmedia%2Fpi%2F92491%2F2DF_800.jpg&w=3840&q=75', '$34.98 / 100ml'],
-    ['Natural State Lavender & Sandalwood Hand Wash Refill 700mL', 'Woolworths', 10.00, [7.00, 7.00], 0, 'https://cdn0.woolworths.media/content/wowproductimages/large/198142.jpg', '$1.00 / 100ml'],
-    ['Handee Ultra Double Length Paper Towel 3 x 120 pack', 'Woolworths', 9.00, [7.20, 7.20], 0, 'https://assets.woolworths.com.au/images/1005/752113.jpg?impolicy=wowsmkqiema&w=360&h=360', '$2.00 / 100 sheets']
+    ['Band-Aid Tough Strips 40 Pack', 'Chemist Warehouse', 5.99, [4.19, 4.19], 0, 'https://www.chemistwarehouse.com.au/_next/image?url=https%3A%2F%2Fstatic.chemistwarehouse.com.au%2Fams%2Fmedia%2Fpi%2F69810%2F2DF_800.jpg&w=3840&q=75', '$0.10 / strip', ''],
+    ['Band-Aid Tough Strips 40 Pack', 'Woolworths', 5.50, [5.50, 5.50], 0, 'https://www.chemistwarehouse.com.au/_next/image?url=https%3A%2F%2Fstatic.chemistwarehouse.com.au%2Fams%2Fmedia%2Fpi%2F69810%2F2DF_800.jpg&w=3840&q=75', '$0.14 / strip', ''],
+    ['Oil Garden Sweet Almond Oil 200ml', 'Chemist Warehouse', 19.99, [17.99, 17.99], 0, 'https://www.chemistwarehouse.com.au/_next/image?url=https%3A%2F%2Fstatic.chemistwarehouse.com.au%2Fams%2Fmedia%2Fpi%2F66029%2F2DF_800.jpg&w=3840&q=75', '$9.00 / 100ml', ''],
+    ['Oil Garden Jojoba Oil 100ml', 'Chemist Warehouse', 29.99, [26.99, 26.99], 0, 'https://www.chemistwarehouse.com.au/_next/image?url=https%3A%2F%2Fstatic.chemistwarehouse.com.au%2Fams%2Fmedia%2Fpi%2F73660%2F2DF_800.jpg&w=3840&q=75', '$26.99 / 100ml', ''],
+    ['OsteVit-D Vitamin D3 Liquid 50ml', 'Chemist Warehouse', 26.99, [17.49, 17.49], 0, 'https://www.chemistwarehouse.com.au/_next/image?url=https%3A%2F%2Fstatic.chemistwarehouse.com.au%2Fams%2Fmedia%2Fpi%2F92491%2F2DF_800.jpg&w=3840&q=75', '$34.98 / 100ml', ''],
+    ['Natural State Lavender & Sandalwood Hand Wash Refill 700mL', 'Woolworths', 10.00, [7.00, 7.00], 0, 'https://cdn0.woolworths.media/content/wowproductimages/large/198142.jpg', '$1.00 / 100ml', ''],
+    ['Handee Ultra Double Length Paper Towel 3 x 120 pack', 'Woolworths', 9.00, [7.20, 7.20], 0, 'https://assets.woolworths.com.au/images/1005/752113.jpg?impolicy=wowsmkqiema&w=360&h=360', '$2.00 / 100 sheets', 'Handee Paper Towel'],
+    ['Handee Ultra Double Length White Paper Towel 2 x 120 pack', 'Woolworths', 5.25, [5.25, 5.25], 0, 'https://assets.woolworths.com.au/images/1005/212842.jpg?impolicy=wowsmkqiema&w=360&h=360', '$2.19 / 100 sheets', 'Handee Paper Towel']
   ];
 
   function buildMockRecords() {
     const rows = [];
-    RAW_SPECS.forEach(([name, store, rrp, prices, cycle, imageUrl, unitPrice]) => {
+    RAW_SPECS.forEach(([name, store, rrp, prices, cycle, imageUrl, unitPrice, group]) => {
       DATES.forEach((d, idx) => {
-        rows.push({ date: d, canonical: name, retailer: store, price: prices[idx], rrp, cycle, imageUrl, unitPrice });
+        rows.push({ date: d, canonical: name, retailer: store, price: prices[idx], rrp, cycle, imageUrl, unitPrice, group });
       });
     });
     return rows;
@@ -114,9 +115,10 @@
     const byProd = new Map();
     rows.forEach(r => {
       if (!byProd.has(r.canonical)) {
-        byProd.set(r.canonical, { canonical: r.canonical, retailers: new Map(), cycle: r.cycle || 0, imageUrl: r.imageUrl || '' });
+        byProd.set(r.canonical, { canonical: r.canonical, retailers: new Map(), cycle: r.cycle || 0, imageUrl: r.imageUrl || '', group: r.group || '' });
       }
       const p = byProd.get(r.canonical);
+      if (r.group && !p.group) p.group = r.group;
       if (!p.retailers.has(r.retailer)) p.retailers.set(r.retailer, []);
       p.retailers.get(r.retailer).push(r);
     });
@@ -166,6 +168,7 @@
       list.push({
         canonical: p.canonical,
         imageUrl: p.imageUrl || '',
+        group: p.group || '',
         storeLatest,
         retailers: p.retailers,
         stores,
@@ -183,13 +186,31 @@
         isBuy
       });
     });
-    // Sort by current Discount % descending, then by product name
-    list.sort((a, b) => {
-      if (sortMode === 'lowest') {
-        const aLow = a.bestNow <= a.low6m + 0.01 ? 1 : 0;
-        const bLow = b.bestNow <= b.low6m + 0.01 ? 1 : 0;
-        if (bLow !== aLow) return bLow - aLow;
+    // Compute group-level sort keys so grouped products always stay together
+    const groupStats = new Map();
+    list.forEach(item => {
+      const gKey = item.group || item.canonical;
+      const isLow = item.bestNow <= item.low6m + 0.01 ? 1 : 0;
+      if (!groupStats.has(gKey)) {
+        groupStats.set(gKey, { maxDisc: item.discPct, maxLow: isLow, name: gKey });
+      } else {
+        const gs = groupStats.get(gKey);
+        if (item.discPct > gs.maxDisc) gs.maxDisc = item.discPct;
+        if (isLow > gs.maxLow) gs.maxLow = isLow;
       }
+    });
+
+    list.sort((a, b) => {
+      const gaKey = a.group || a.canonical;
+      const gbKey = b.group || b.canonical;
+      const ga = groupStats.get(gaKey);
+      const gb = groupStats.get(gbKey);
+      if (gaKey !== gbKey) {
+        if (sortMode === 'lowest' && gb.maxLow !== ga.maxLow) return gb.maxLow - ga.maxLow;
+        if (gb.maxDisc !== ga.maxDisc) return gb.maxDisc - ga.maxDisc;
+        return gaKey.localeCompare(gbKey);
+      }
+      // Inside the same group, put highest discount first
       return (b.discPct - a.discPct) || a.canonical.localeCompare(b.canonical);
     });
     return list;
@@ -381,6 +402,7 @@
                 <div class="text-[11px] font-medium text-neutral-200">${p.predNextLabel}</div>
               </div>
             </div>
+            ${p.group ? `<div class="flex items-center justify-between text-[10px] pt-1 border-t border-neutral-800/80 text-purple-300"><span>Group</span><span class="font-medium">${p.group}</span></div>` : ''}
             ${p.storeLatest.length > 1 ? `<div class="flex items-center justify-between text-[11px] pt-1 border-t border-neutral-800/80 text-blue-300"><span>Compare:</span><span class="font-medium">${p.storeLatest.map(x => `${x.store === 'Woolworths' ? 'WW' : 'CW'} $${x.price.toFixed(2)}`).join(' &middot; ')}</span></div>` : ''}
           </div>
         </div>
@@ -439,6 +461,7 @@
     const idxRrp = headers.findIndex(h => h.includes('rrp'));
     const idxImg = headers.findIndex(h => h.includes('image'));
     const idxUnit = headers.findIndex(h => h.includes('unit price'));
+    const idxGroup = headers.findIndex(h => h.includes('group'));
 
     const parsed = [];
     for (let i = 1; i < lines.length; i++) {
@@ -455,6 +478,7 @@
         rrp: isNaN(rrp) ? price : rrp,
         imageUrl: idxImg >= 0 ? (cols[idxImg] || '') : '',
         unitPrice: idxUnit >= 0 ? (cols[idxUnit] || '') : '',
+        group: idxGroup >= 0 ? (cols[idxGroup] || '') : '',
         cycle: 28
       });
     }
@@ -478,7 +502,7 @@
       const parsed = parseCsv(text);
       if (parsed.length === 0) throw new Error('No valid rows found in CSV');
       allRows = parsed;
-      selectedCanonical = parsed[0].canonical;
+      selectedCanonical = null;
       document.getElementById('resetDemoBtn').classList.remove('hidden');
       try { localStorage.setItem('cw_ww_csv_url', url); } catch (e) {}
       showStatus('Loaded live data from Google Sheet CSV.', false);
