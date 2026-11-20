@@ -115,6 +115,7 @@
   let favOnly = false;
   let watchlistMode = false;
   let trackedLinks = [];
+  const expandedGroups = new Set();
   let favorites = new Set();
   try {
     const savedFavs = JSON.parse(localStorage.getItem('cw_ww_favorites') || '[]');
@@ -468,7 +469,31 @@
     let expandedCanvas = null;
     let expandedProd = null;
 
-    filtered.forEach((p, idx) => {
+    // Count items per group in filtered list
+    const groupCounts = new Map();
+    const groupSeen = new Map();
+    filtered.forEach(p => {
+      if (p.group) groupCounts.set(p.group, (groupCounts.get(p.group) || 0) + 1);
+    });
+
+    const visibleItems = [];
+    filtered.forEach(p => {
+      if (!p.group) {
+        visibleItems.push({ p, isGroupTop: false, extraCount: 0, isGroupChild: false });
+        return;
+      }
+      const seen = groupSeen.get(p.group) || 0;
+      groupSeen.set(p.group, seen + 1);
+      const totalInGroup = groupCounts.get(p.group) || 1;
+      const isExpanded = !!q || expandedGroups.has(p.group);
+      if (seen === 0) {
+        visibleItems.push({ p, isGroupTop: totalInGroup > 1, extraCount: totalInGroup - 1, isExpanded, isGroupChild: false });
+      } else if (isExpanded) {
+        visibleItems.push({ p, isGroupTop: false, extraCount: 0, isExpanded: true, isGroupChild: true });
+      }
+    });
+
+    visibleItems.forEach(({ p, isGroupTop, extraCount, isExpanded, isGroupChild }, idx) => {
       const card = document.createElement('div');
       const active = p.canonical === selectedCanonical;
       const isAtLowest = p.bestNow <= p.low6m + 0.01;
@@ -544,7 +569,7 @@
                 <div class="text-[11px] font-medium text-neutral-200">${p.predNextLabel}</div>
               </div>
             </div>
-            ${p.group ? `<div class="flex items-center justify-between text-[10px] pt-1 border-t border-neutral-800/80 text-purple-300"><span>Group</span><span class="font-medium">${p.group}</span></div>` : ''}
+            ${p.group ? `<div class="flex items-center justify-between gap-2 text-[10px] pt-1 border-t border-neutral-800/80 text-purple-300"><span class="truncate">${isGroupChild ? '↳ ' : ''}${p.group}</span>${isGroupTop ? `<button type="button" class="group-toggle-btn shrink-0 px-2 py-0.5 rounded bg-purple-950/80 border border-purple-700/70 text-purple-200 hover:bg-purple-900 font-semibold" data-group="${p.group.replace(/"/g, '&quot;')}">${isExpanded ? 'Hide ' + extraCount + ' &#9650;' : '+' + extraCount + ' more &#9660;'}</button>` : ''}</div>` : ''}
             ${p.storeLatest.length > 1 ? `<div class="flex items-center justify-between text-[11px] pt-1 border-t border-neutral-800/80 text-blue-300"><span>Compare:</span><span class="font-medium">${p.storeLatest.map(x => `${x.store === 'Woolworths' ? 'WW' : 'CW'} $${x.price.toFixed(2)}`).join(' &middot; ')}</span></div>` : ''}
           </div>
         </div>
@@ -568,6 +593,16 @@
         expandedProd = p;
       }
 
+      const grpBtn = card.querySelector('.group-toggle-btn');
+      if (grpBtn) {
+        grpBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          const gName = grpBtn.dataset.group;
+          if (expandedGroups.has(gName)) expandedGroups.delete(gName);
+          else expandedGroups.add(gName);
+          renderAll();
+        });
+      }
       const starBtn = card.querySelector('.fav-star-btn');
       if (starBtn) {
         starBtn.addEventListener('click', e => {
