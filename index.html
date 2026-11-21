@@ -131,6 +131,13 @@
     return !!p.sheetFav || favorites.has(favKeyFor(p));
   }
 
+  function extractPackSize(name) {
+    if (!name) return '';
+    const m = String(name).match(/\b(\d+(?:\.\d+)?\s*(?:x\s*\d+\s*)?(?:pack|pk|ml|l|g|kg|tablets?|tabs?|capsules?|caps?|sheets?|rolls?))\b/i);
+    if (!m) return '';
+    return m[1].replace(/\s+/g, ' ').replace(/\bpack\b/i, 'pk').replace(/\bvalue\s+pk\b/i, 'pk').trim();
+  }
+
   function aggregateProducts(rows, storeScope) {
     const byProd = new Map();
     rows.forEach(r => {
@@ -173,6 +180,7 @@
           lowUnitPrice: storeLowUnit,
           url: storeUrl,
           fullName: storeFullName,
+          packSize: extractPackSize(storeFullName) || extractPackSize(p.canonical),
           promo: storePromo
         });
         if (targetStore && store !== targetStore) return;
@@ -198,7 +206,7 @@
       if (p.cycle === 0) {
         predNextLabel = 'Gathering cycle data';
       } else if (bestNow <= low6m * 1.01) {
-        predNextLabel = `$${low6m.toFixed(2)} (Active Now)`;
+        predNextLabel = 'At Lowest Now';
       } else if (lastLowDate && latestDate) {
         const ref = new Date(latestDate + 'T00:00:00');
         let nextDt = new Date(lastLowDate + 'T00:00:00');
@@ -561,12 +569,14 @@
         : '<span class="text-xs text-neutral-500 ml-1">&#9660;</span>';
       const initials = p.canonical.split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
       const thumbHtml = p.imageUrl
-        ? `<img src="${p.imageUrl}" alt="${p.canonical}" class="w-28 h-28 sm:w-32 sm:h-32 rounded-xl object-contain bg-white p-1.5 border border-neutral-700" />`
-        : `<div class="w-28 h-28 sm:w-32 sm:h-32 rounded-xl bg-neutral-800 border border-neutral-700 text-neutral-300 text-xl font-bold flex items-center justify-center">${initials}</div>`;
+        ? `<img src="${p.imageUrl}" alt="${p.canonical}" class="w-20 h-20 sm:w-28 sm:h-28 rounded-xl object-contain bg-white p-1 border border-neutral-700" />`
+        : `<div class="w-20 h-20 sm:w-28 sm:h-28 rounded-xl bg-neutral-800 border border-neutral-700 text-neutral-300 text-lg font-bold flex items-center justify-center">${initials}</div>`;
+      const bestStoreObj = p.storeLatest.find(x => x.store === p.bestNowStore) || {};
+      const bestPackTag = bestStoreObj.packSize ? ` &middot; ${bestStoreObj.packSize}` : '';
 
       card.innerHTML = `
-        <div class="flex items-stretch gap-3">
-          <div class="w-28 sm:w-32 shrink-0 flex flex-col gap-1.5">
+        <div class="flex items-stretch gap-2.5 sm:gap-3">
+          <div class="w-20 sm:w-28 shrink-0 flex flex-col gap-1.5">
             ${thumbHtml}
             <h3 class="text-xs font-semibold text-white leading-snug break-words">${p.canonical}</h3>
           </div>
@@ -574,8 +584,8 @@
             <div class="flex items-center justify-end gap-1.5"><button type="button" class="fav-star-btn px-1 text-sm leading-none ${isFav(p) ? 'text-amber-400' : 'text-neutral-500 hover:text-amber-300'}" title="${p.group ? 'Favorite group: ' + p.group : 'Favorite product'}">${isFav(p) ? '★' : '☆'}</button>${storeBadge}${chevron}</div>
             <div class="grid grid-cols-2 gap-2 pt-1.5 border-t border-neutral-800">
               <div>
-                <div class="text-[10px] text-neutral-400">Now <span class="${p.bestNowStore === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300'} font-semibold">(${p.bestNowStore === 'Woolworths' ? 'WW' : 'CW'})</span> / RRP</div>
-                <div class="text-sm font-bold ${isAtLowest ? 'text-emerald-300' : 'text-white'}">$${p.bestNow.toFixed(2)} <span class="text-[11px] font-normal text-neutral-300">/ $${p.bestRrp.toFixed(2)}</span></div>
+                <div class="text-[10px] text-neutral-400">Now <span class="${p.bestNowStore === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300'} font-semibold">(${p.bestNowStore === 'Woolworths' ? 'WW' : 'CW'}${bestPackTag})</span></div>
+                <div class="text-sm font-bold whitespace-nowrap ${isAtLowest ? 'text-emerald-300' : 'text-white'}">$${p.bestNow.toFixed(2)} ${p.bestRrp > p.bestNow ? `<span class="text-[11px] font-normal text-neutral-400 line-through">$${p.bestRrp.toFixed(2)}</span>` : ''}</div>
                 ${p.bestUnitPrice ? `<div class="text-[10px] text-neutral-400 mt-0.5">${p.bestUnitPrice}</div>` : ''}
               </div>
               <div class="text-right">
@@ -592,7 +602,7 @@
               </div>
             </div>
             ${p.group ? `<div class="flex items-center justify-between gap-2 text-[10px] pt-1 border-t border-neutral-800/80 text-purple-300"><span class="truncate">${isGroupChild ? '↳ ' : ''}${p.group}</span>${isGroupTop ? `<button type="button" class="group-toggle-btn shrink-0 px-2 py-0.5 rounded bg-purple-950/80 border border-purple-700/70 text-purple-200 hover:bg-purple-900 font-semibold" data-group="${p.group.replace(/"/g, '&quot;')}">${isExpanded ? 'Hide ' + extraCount + ' &#9650;' : '+' + extraCount + ' more &#9660;'}</button>` : ''}</div>` : ''}
-            ${(() => { const other = p.storeLatest.find(x => x.store !== p.bestNowStore); if (!other) return ''; const sc = other.store === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300'; const sn = other.store === 'Woolworths' ? 'WW' : 'CW'; return `<div class="grid grid-cols-2 gap-2 pt-1.5 border-t border-neutral-800/80 text-[11px]"><div><div class="text-[10px] text-neutral-400">Now <span class="${sc} font-semibold">(${sn})</span></div><div class="font-bold text-white">$${other.price.toFixed(2)}</div>${other.unitPrice ? `<div class="text-[10px] text-neutral-400">${other.unitPrice}</div>` : ''}</div><div class="text-right"><div class="text-[10px] text-neutral-400">Lowest <span class="${sc} font-semibold">(${sn})</span></div><div class="font-semibold text-emerald-300">$${other.low.toFixed(2)}</div>${other.lowUnitPrice ? `<div class="text-[10px] text-neutral-400">${other.lowUnitPrice}</div>` : ''}</div></div>`; })()}
+            ${(() => { const other = p.storeLatest.find(x => x.store !== p.bestNowStore); if (!other) return ''; const sc = other.store === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300'; const sn = other.store === 'Woolworths' ? 'WW' : 'CW'; const pt = other.packSize ? ` &middot; ${other.packSize}` : ''; return `<div class="grid grid-cols-2 gap-2 pt-1.5 border-t border-neutral-800/80 text-[11px]"><div><div class="text-[10px] text-neutral-400">Now <span class="${sc} font-semibold">(${sn}${pt})</span></div><div class="font-bold whitespace-nowrap text-white">$${other.price.toFixed(2)}</div>${other.unitPrice ? `<div class="text-[10px] text-neutral-400">${other.unitPrice}</div>` : ''}</div><div class="text-right"><div class="text-[10px] text-neutral-400">Lowest <span class="${sc} font-semibold">(${sn})</span></div><div class="font-semibold whitespace-nowrap text-emerald-300">$${other.low.toFixed(2)}</div>${other.lowUnitPrice ? `<div class="text-[10px] text-neutral-400">${other.lowUnitPrice}</div>` : ''}</div></div>`; })()}
           </div>
         </div>
       `;
