@@ -152,9 +152,29 @@
       p.retailers.forEach((arr, store) => {
         arr.sort((a, b) => a.date.localeCompare(b.date));
         const latest = arr[arr.length - 1];
-        let storeLow = Infinity;
-        arr.forEach(item => { if (item.price < storeLow) storeLow = item.price; });
-        storeLatest.push({ store, price: latest.price, rrp: latest.rrp, low: storeLow });
+        let storeLow = Infinity, storeLowUnit = '', storeUrl = latest.url || '', storeFullName = latest.fullName || p.canonical, storePromo = latest.promo || '';
+        arr.forEach(item => {
+          if (item.price < storeLow) {
+            storeLow = item.price;
+            storeLowUnit = item.unitPrice || '';
+          }
+          if (!storeUrl && item.url) storeUrl = item.url;
+        });
+        if (!storeUrl && typeof trackedLinks !== 'undefined' && Array.isArray(trackedLinks)) {
+          const tlMatch = trackedLinks.find(t => t.canonical === p.canonical && t.retailer === store && t.url);
+          if (tlMatch) storeUrl = tlMatch.url;
+        }
+        storeLatest.push({
+          store,
+          price: latest.price,
+          rrp: latest.rrp,
+          low: storeLow,
+          unitPrice: latest.unitPrice || '',
+          lowUnitPrice: storeLowUnit,
+          url: storeUrl,
+          fullName: storeFullName,
+          promo: storePromo
+        });
         if (targetStore && store !== targetStore) return;
         if (latest.date > latestDate) latestDate = latest.date;
         if (latest.price < bestNow) { bestNow = latest.price; bestNowStore = store; bestRrp = latest.rrp; bestUnitPrice = latest.unitPrice || ''; }
@@ -572,19 +592,76 @@
               </div>
             </div>
             ${p.group ? `<div class="flex items-center justify-between gap-2 text-[10px] pt-1 border-t border-neutral-800/80 text-purple-300"><span class="truncate">${isGroupChild ? '↳ ' : ''}${p.group}</span>${isGroupTop ? `<button type="button" class="group-toggle-btn shrink-0 px-2 py-0.5 rounded bg-purple-950/80 border border-purple-700/70 text-purple-200 hover:bg-purple-900 font-semibold" data-group="${p.group.replace(/"/g, '&quot;')}">${isExpanded ? 'Hide ' + extraCount + ' &#9650;' : '+' + extraCount + ' more &#9660;'}</button>` : ''}</div>` : ''}
-            ${(() => { const other = p.storeLatest.find(x => x.store !== p.bestNowStore); return other ? `<div class="flex items-center justify-between text-[11px] pt-1 border-t border-neutral-800/80 text-neutral-300"><span class="${other.store === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300'} font-semibold">${other.store === 'Woolworths' ? 'WW' : 'CW'}</span><span>Now <strong class="text-white">$${other.price.toFixed(2)}</strong> &middot; Low <strong class="text-emerald-300">$${other.low.toFixed(2)}</strong></span></div>` : ''; })()}
+            ${(() => { const other = p.storeLatest.find(x => x.store !== p.bestNowStore); return other ? `<div class="flex items-center justify-between gap-2 text-[11px] pt-1 border-t border-neutral-800/80 text-neutral-300"><span class="${other.store === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300'} font-semibold shrink-0">${other.store === 'Woolworths' ? 'WW' : 'CW'}</span><span class="text-right">Now <strong class="text-white">$${other.price.toFixed(2)}</strong>${other.unitPrice ? ` <span class="text-neutral-400">(${other.unitPrice})</span>` : ''} &middot; Low <strong class="text-emerald-300">$${other.low.toFixed(2)}</strong></span></div>` : ''; })()}
           </div>
         </div>
       `;
 
       if (active) {
         const drawer = document.createElement('div');
-        drawer.className = 'pt-3 mt-1 border-t border-neutral-700 space-y-2';
+        drawer.className = 'pt-3 mt-1 border-t border-neutral-700 space-y-3';
+        const storeDetailCards = p.storeLatest.map(s => {
+          const isWW = s.store === 'Woolworths';
+          const badgeCls = isWW
+            ? 'bg-teal-950 text-teal-300 border-teal-800'
+            : 'bg-indigo-950 text-indigo-300 border-indigo-800';
+          const linkHtml = s.url
+            ? `<a href="${s.url}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-teal-300 text-[11px] font-semibold border border-neutral-700 transition">Open ${isWW ? 'Woolworths' : 'Chemist Warehouse'} &rarr;</a>`
+            : '';
+          return `
+            <div class="rounded-lg border border-neutral-800 bg-neutral-950/80 p-2.5 flex flex-col justify-between gap-2">
+              <div class="space-y-1">
+                <div class="flex flex-wrap items-center justify-between gap-1.5">
+                  <span class="px-2 py-0.5 text-[11px] font-semibold rounded border ${badgeCls}">${s.store}</span>
+                  ${s.promo ? `<span class="text-[10px] text-amber-300 font-medium">${s.promo}</span>` : ''}
+                </div>
+                <div class="text-xs font-medium text-white leading-snug">${s.fullName || p.canonical}</div>
+              </div>
+              <div class="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-neutral-800/80 text-[11px]">
+                <div class="text-neutral-300">
+                  Now <strong class="text-white">$${s.price.toFixed(2)}</strong>
+                  ${s.rrp > s.price ? `<span class="line-through text-neutral-500 ml-1">$${s.rrp.toFixed(2)}</span>` : ''}
+                  ${s.unitPrice ? `<span class="text-teal-300 font-semibold ml-1.5">(${s.unitPrice})</span>` : ''}
+                  <span class="text-neutral-500 mx-1">&middot;</span>
+                  Low <strong class="text-emerald-300">$${s.low.toFixed(2)}</strong>
+                </div>
+                ${linkHtml}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        const groupSiblings = p.group
+          ? allAgg.filter(x => x.group === p.group && x.canonical !== p.canonical)
+          : [];
+        const siblingsHtml = groupSiblings.length > 0
+          ? `<div class="rounded-lg border border-purple-900/50 bg-purple-950/20 p-2.5 space-y-1.5">
+              <div class="text-[11px] font-semibold text-purple-300">Other sizes / options in "${p.group}"</div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                ${groupSiblings.map(sib => {
+                  const sibUrl = (sib.storeLatest.find(x => x.store === sib.bestNowStore) || sib.storeLatest[0] || {}).url || '';
+                  return `<div class="flex items-center justify-between gap-2 text-[11px] bg-neutral-950/70 border border-neutral-800 rounded px-2 py-1">
+                    <span class="text-neutral-200 truncate" title="${sib.canonical}">${sib.canonical}</span>
+                    <span class="shrink-0 text-right">
+                      <strong class="text-white">$${sib.bestNow.toFixed(2)}</strong>
+                      ${sib.bestUnitPrice ? `<span class="text-teal-300 ml-1">(${sib.bestUnitPrice})</span>` : ''}
+                      ${sibUrl ? `<a href="${sibUrl}" target="_blank" rel="noopener noreferrer" class="text-teal-400 hover:underline ml-1.5">&nearr;</a>` : ''}
+                    </span>
+                  </div>`;
+                }).join('')}
+              </div>
+            </div>`
+          : '';
+
         drawer.innerHTML = `
           <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-300">
-            <span>Tracked at: <strong class="text-white">${p.stores.join(' &amp; ')}</strong> &middot; Best now: <strong class="text-teal-300">$${p.bestNow.toFixed(2)}</strong> (${p.bestNowStore})</span>
+            <span>Tracked at: <strong class="text-white">${p.stores.join(' &amp; ')}</strong> &middot; Best now: <strong class="text-teal-300">$${p.bestNow.toFixed(2)}</strong> (${p.bestNowStore})${p.bestUnitPrice ? ` &middot; <strong class="text-emerald-300">${p.bestUnitPrice}</strong>` : ''}</span>
             <span>Avg cycle: <strong class="text-white">${p.cycle > 0 ? '~' + p.cycle + ' days' : 'Static'}</strong></span>
           </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            ${storeDetailCards}
+          </div>
+          ${siblingsHtml}
           <div class="relative h-64 sm:h-72 w-full">
             <canvas class="inline-price-chart"></canvas>
           </div>
@@ -651,6 +728,9 @@
     const idxRrp = headers.findIndex(h => h.includes('rrp'));
     const idxImg = headers.findIndex(h => h.includes('image'));
     const idxUnit = headers.findIndex(h => h.includes('unit price'));
+    const idxUrl = headers.findIndex(h => h.includes('source url') || (h.includes('url') && !h.includes('image')));
+    const idxFullName = headers.findIndex(h => h.includes('product name & size') || h.includes('name & size'));
+    const idxPromo = headers.findIndex(h => h.includes('promo'));
     const idxGroup = headers.findIndex(h => h.includes('group'));
     const idxFav = headers.findIndex(h => h.includes('fav'));
 
@@ -669,6 +749,9 @@
         rrp: isNaN(rrp) ? price : rrp,
         imageUrl: idxImg >= 0 ? (cols[idxImg] || '') : '',
         unitPrice: idxUnit >= 0 ? (cols[idxUnit] || '') : '',
+        url: idxUrl >= 0 ? (cols[idxUrl] || '') : '',
+        fullName: idxFullName >= 0 ? (cols[idxFullName] || '') : '',
+        promo: idxPromo >= 0 ? (cols[idxPromo] || '') : '',
         group: idxGroup >= 0 ? (cols[idxGroup] || '') : '',
         favorite: idxFav >= 0 ? /^(true|yes|1|y|★)$/i.test((cols[idxFav] || '').trim()) : false,
         cycle: 28
