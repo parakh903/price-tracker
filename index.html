@@ -45,12 +45,11 @@
             Sort: Discount % &darr;
           </button>
         </div>
-        <div class="text-[11px] text-neutral-400 flex flex-wrap items-center gap-2">
-          <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>45%+</span>
-          <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-400"></span>25–44%</span>
-          <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-sky-400"></span>1–24%</span>
-          <span>&middot;</span>
-          <span id="visibleCountLabel">50 products</span>
+        <div class="text-xs text-neutral-300 flex flex-wrap items-center gap-2.5">
+          <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>25%+ Deal</span>
+          <span class="inline-flex items-center gap-1"><span class="w-1 h-3 rounded-sm bg-cyan-400"></span>Lowest</span>
+          <span class="text-neutral-600">&middot;</span>
+          <span id="visibleCountLabel" class="text-neutral-400">50 products</span>
         </div>
       </div>
     </div>
@@ -528,30 +527,20 @@
       const active = p.canonical === selectedCanonical;
       const isAtLowest = p.bestNow <= p.low6m + 0.01;
 
-      // Color-coding by discount % tier
-      let tierCard = idx % 2 === 0
-        ? 'bg-neutral-950 border-neutral-800 hover:border-neutral-600'
-        : 'bg-neutral-900 border-neutral-700/80 hover:border-neutral-500';
-      let discPill = '<span class="text-xs text-neutral-500">0% off</span>';
+      // High-contrast color-coding: Amber for 25%+ real deals, subtle grey for 1-24%
+      const baseBg = 'bg-neutral-950';
+      let tierCard = `${baseBg} border-neutral-800 hover:border-neutral-600`;
+      let discPill = '<span class="text-xs text-neutral-400">0% off</span>';
 
-      if (p.discPct >= 45) {
-        tierCard = idx % 2 === 0
-          ? 'bg-emerald-950/40 border-emerald-600/60 hover:border-emerald-400'
-          : 'bg-emerald-950/60 border-emerald-500/60 hover:border-emerald-400';
-        discPill = `<span class="px-2 py-0.5 text-xs font-bold rounded bg-emerald-500/20 text-emerald-300">${p.discPct.toFixed(0)}% off</span>`;
-      } else if (p.discPct >= 25) {
-        tierCard = idx % 2 === 0
-          ? 'bg-amber-950/30 border-amber-600/50 hover:border-amber-400'
-          : 'bg-amber-950/45 border-amber-500/50 hover:border-amber-400';
-        discPill = `<span class="px-2 py-0.5 text-xs font-bold rounded bg-amber-500/20 text-amber-300">${p.discPct.toFixed(0)}% off</span>`;
+      if (p.discPct >= 25) {
+        tierCard = `${baseBg} border-amber-500/80 hover:border-amber-400`;
+        discPill = `<span class="px-2 py-0.5 text-xs font-bold rounded bg-amber-500/25 text-amber-200 border border-amber-500/40">${p.discPct.toFixed(0)}% off</span>`;
       } else if (p.discPct > 0) {
-        tierCard = idx % 2 === 0
-          ? 'bg-sky-950/30 border-sky-700/50 hover:border-sky-400'
-          : 'bg-sky-950/45 border-sky-600/50 hover:border-sky-400';
-        discPill = `<span class="px-2 py-0.5 text-xs font-semibold rounded bg-sky-500/20 text-sky-300">${p.discPct.toFixed(0)}% off</span>`;
+        tierCard = `${baseBg} border-neutral-800 hover:border-neutral-600`;
+        discPill = `<span class="px-2 py-0.5 text-xs font-medium rounded bg-neutral-800/90 text-neutral-300 border border-neutral-700">${p.discPct.toFixed(0)}% off</span>`;
       }
 
-      const lowestAccent = isAtLowest ? 'border-l-4 border-l-emerald-400' : '';
+      const lowestAccent = isAtLowest ? 'border-l-4 border-l-cyan-400' : '';
 
       card.className = active
         ? `col-span-full cursor-pointer rounded-xl border-2 border-teal-400 ${lowestAccent} bg-neutral-900 p-4 transition shadow-lg flex flex-col gap-3`
@@ -587,23 +576,23 @@
               <div>
                 <div class="text-[10px] text-neutral-400">Now <span class="${p.bestNowStore === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300'} font-semibold">(${p.bestNowStore === 'Woolworths' ? 'WW' : 'CW'}${bestPackTag})</span></div>
                 <div class="text-sm font-bold whitespace-nowrap ${isAtLowest ? 'text-emerald-300' : 'text-white'}">$${p.bestNow.toFixed(2)} ${p.bestRrp > p.bestNow ? `<span class="text-[11px] font-normal text-neutral-400 line-through">$${p.bestRrp.toFixed(2)}</span>` : ''}</div>
-                ${p.bestUnitPrice ? `<div class="text-[10px] text-neutral-400 mt-0.5">${p.bestUnitPrice}</div>` : ''}
+                ${p.bestUnitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${p.bestUnitPrice}</div>` : ''}
               </div>
               <div class="text-right">
                 <div class="text-[10px] text-neutral-400">Lowest <span class="${p.lowStore === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300'} font-semibold">(${p.lowStore === 'Woolworths' ? 'WW' : 'CW'})</span></div>
                 <div class="text-sm font-semibold text-emerald-300">$${p.low6m.toFixed(2)}</div>
-                ${p.lowUnitPrice ? `<div class="text-[10px] text-neutral-400 mt-0.5">${p.lowUnitPrice}</div>` : ''}
+                ${p.lowUnitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${p.lowUnitPrice}</div>` : ''}
               </div>
             </div>
             <div class="flex items-center justify-between gap-2 pt-1.5 border-t border-neutral-800">
               <div>${discText}</div>
               <div class="text-right">
                 <div class="text-[10px] text-neutral-400">Next low</div>
-                <div class="text-[11px] font-medium text-neutral-200">${p.predNextLabel}</div>
+                <div class="text-[11px] font-medium text-neutral-200">${p.predNextLabel === 'At Lowest Now' ? '<span class="inline-block px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 font-semibold">At Lowest Now</span>' : p.predNextLabel}</div>
               </div>
             </div>
             ${p.group ? `<div class="flex items-center justify-between gap-2 text-[10px] pt-1 border-t border-neutral-800/80 text-purple-300"><span class="truncate">${isGroupChild ? '↳ ' : ''}${p.group}</span>${isGroupTop ? `<button type="button" class="group-toggle-btn shrink-0 px-2 py-0.5 rounded bg-purple-950/80 border border-purple-700/70 text-purple-200 hover:bg-purple-900 font-semibold" data-group="${p.group.replace(/"/g, '&quot;')}">${isExpanded ? 'Hide ' + extraCount + ' &#9650;' : '+' + extraCount + ' more &#9660;'}</button>` : ''}</div>` : ''}
-            ${(() => { const other = p.storeLatest.find(x => x.store !== p.bestNowStore); if (!other) return ''; const sc = other.store === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300'; const sn = other.store === 'Woolworths' ? 'WW' : 'CW'; const pt = other.packSize ? ` &middot; ${other.packSize}` : ''; return `<div class="grid grid-cols-2 gap-2 pt-1.5 border-t border-neutral-800/80 text-[11px]"><div><div class="text-[10px] text-neutral-400">Now <span class="${sc} font-semibold">(${sn}${pt})</span></div><div class="font-bold whitespace-nowrap text-white">$${other.price.toFixed(2)}</div>${other.unitPrice ? `<div class="text-[10px] text-neutral-400">${other.unitPrice}</div>` : ''}</div><div class="text-right"><div class="text-[10px] text-neutral-400">Lowest <span class="${sc} font-semibold">(${sn})</span></div><div class="font-semibold whitespace-nowrap text-emerald-300">$${other.low.toFixed(2)}</div>${other.lowUnitPrice ? `<div class="text-[10px] text-neutral-400">${other.lowUnitPrice}</div>` : ''}</div></div>`; })()}
+            ${(() => { const other = p.storeLatest.find(x => x.store !== p.bestNowStore); if (!other) return ''; const sc = other.store === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300'; const sn = other.store === 'Woolworths' ? 'WW' : 'CW'; const pt = other.packSize ? ` &middot; ${other.packSize}` : ''; return `<div class="grid grid-cols-2 gap-2 pt-1.5 border-t border-neutral-800/80 text-[11px]"><div><div class="text-[10px] text-neutral-400">Now <span class="${sc} font-semibold">(${sn}${pt})</span></div><div class="font-bold whitespace-nowrap text-white">$${other.price.toFixed(2)}</div>${other.unitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${other.unitPrice}</div>` : ''}</div><div class="text-right"><div class="text-[10px] text-neutral-400">Lowest <span class="${sc} font-semibold">(${sn})</span></div><div class="font-semibold whitespace-nowrap text-emerald-300">$${other.low.toFixed(2)}</div>${other.lowUnitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${other.lowUnitPrice}</div>` : ''}</div></div>`; })()}
           </div>
         </div>
       `;
