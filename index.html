@@ -574,15 +574,16 @@
       const bestStoreObj = p.storeLatest.find(x => x.store === p.bestNowStore) || {};
       const bestPackTag = bestStoreObj.packSize ? ` &middot; ${bestStoreObj.packSize}` : '';
 
+      const starBtnHtml = `<button type="button" class="fav-star-btn inline-block mr-1 align-baseline text-sm leading-none ${isFav(p) ? 'text-amber-400' : 'text-neutral-500 hover:text-amber-300'}" title="${p.group ? 'Favorite group: ' + p.group : 'Favorite product'}">${isFav(p) ? '★' : '☆'}</button>`;
+
       card.innerHTML = `
         <div class="flex items-stretch gap-2.5 sm:gap-3">
           <div class="w-20 sm:w-28 shrink-0 flex flex-col gap-1.5">
             ${thumbHtml}
-            <h3 class="text-xs font-semibold text-white leading-snug break-words">${p.canonical}</h3>
+            <h3 class="text-xs font-semibold text-white leading-snug break-words">${starBtnHtml}${p.canonical}</h3>
           </div>
           <div class="flex-1 min-w-0 flex flex-col justify-between gap-2">
-            <div class="flex items-center justify-end gap-1.5"><button type="button" class="fav-star-btn px-1 text-sm leading-none ${isFav(p) ? 'text-amber-400' : 'text-neutral-500 hover:text-amber-300'}" title="${p.group ? 'Favorite group: ' + p.group : 'Favorite product'}">${isFav(p) ? '★' : '☆'}</button>${storeBadge}${chevron}</div>
-            <div class="grid grid-cols-2 gap-2 pt-1.5 border-t border-neutral-800">
+            <div class="grid grid-cols-2 gap-2">
               <div>
                 <div class="text-[10px] text-neutral-400">Now <span class="${p.bestNowStore === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300'} font-semibold">(${p.bestNowStore === 'Woolworths' ? 'WW' : 'CW'}${bestPackTag})</span></div>
                 <div class="text-sm font-bold whitespace-nowrap ${isAtLowest ? 'text-emerald-300' : 'text-white'}">$${p.bestNow.toFixed(2)} ${p.bestRrp > p.bestNow ? `<span class="text-[11px] font-normal text-neutral-400 line-through">$${p.bestRrp.toFixed(2)}</span>` : ''}</div>
