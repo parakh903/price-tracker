@@ -10,13 +10,19 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
-    .row-active { background-color: #f0fdfa !important; border-left: 3px solid #0f766e; }
+    /* Base dark typography and active selection highlight */
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    .row-active {
+      background-color: #f0fdfa !important;
+      border-left: 3px solid #0f766e;
+    }
   </style>
 </head>
 <body class="bg-black text-neutral-100 min-h-screen overflow-x-hidden">
 
-  <!-- Single Sticky Search & Filter Bar right at the very top -->
+  <!-- Sticky Search & Filter Header Bar -->
   <header id="topHeader" class="bg-neutral-950/95 backdrop-blur border-b border-neutral-800 sticky top-0 z-20 transition-transform duration-200 will-change-transform">
     <div class="max-w-7xl mx-auto px-3 sm:px-6 py-1.5 space-y-1">
       <div class="flex items-center gap-2">
@@ -49,7 +55,7 @@
           <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>25%+ Deal</span>
           <span class="inline-flex items-center gap-1"><span class="w-1 h-3 rounded-sm bg-cyan-400"></span>Lowest</span>
           <span class="text-neutral-600">&middot;</span>
-          <span id="visibleCountLabel" class="text-neutral-400">50 products</span>
+          <span id="visibleCountLabel" class="text-neutral-400">0 products</span>
         </div>
       </div>
     </div>
@@ -57,9 +63,8 @@
 
   <main class="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 space-y-2">
     <div id="statusBanner" class="hidden rounded-xl px-3 py-2 text-xs font-medium"></div>
-    <!-- Product Cards Grid starting immediately at top -->
+    <!-- Product Cards Grid -->
     <div id="productCardGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5"></div>
-
   </main>
 
   <!-- Connect Google Sheet CSV Modal -->
@@ -67,7 +72,7 @@
     <div class="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-xl space-y-4 text-neutral-100">
       <div class="flex items-center justify-between">
         <h3 class="text-lg font-bold text-white">Connect Live Google Sheet CSV</h3>
-        <button id="closeCsvModalBtn" type="button" class="text-slate-400 hover:text-slate-700 text-xl leading-none">&times;</button>
+        <button id="closeCsvModalBtn" type="button" class="text-slate-400 hover:text-slate-200 text-xl leading-none">&times;</button>
       </div>
       <p class="text-sm text-neutral-300">
         In Google Sheets, click <strong>File &rarr; Share &rarr; Publish to web</strong>, select your <strong>History Log</strong> tab as <strong>CSV</strong>, and paste the link below.
@@ -85,6 +90,7 @@
 (function() {
   const DATES = ['2026-11-18', '2026-11-19'];
 
+  // Fallback sample dataset when offline or when CSV fetch is unavailable
   const RAW_SPECS = [
     ['Band-Aid Tough Strips 40 Pack', 'Chemist Warehouse', 5.99, [4.19, 4.19], 0, 'https://www.chemistwarehouse.com.au/_next/image?url=https%3A%2F%2Fstatic.chemistwarehouse.com.au%2Fams%2Fmedia%2Fpi%2F69810%2F2DF_800.jpg&w=3840&q=75', '$0.10 / strip', ''],
     ['Band-Aid Tough Strips 40 Pack', 'Woolworths', 5.50, [5.50, 5.50], 0, 'https://www.chemistwarehouse.com.au/_next/image?url=https%3A%2F%2Fstatic.chemistwarehouse.com.au%2Fams%2Fmedia%2Fpi%2F69810%2F2DF_800.jpg&w=3840&q=75', '$0.14 / strip', ''],
@@ -96,18 +102,39 @@
     ['Handee Ultra Double Length White Paper Towel 2 x 120 pack', 'Woolworths', 5.25, [5.25, 5.25], 0, 'https://assets.woolworths.com.au/images/1005/212842.jpg?impolicy=wowsmkqiema&w=360&h=360', '$2.19 / 100 sheets', 'Handee Paper Towel']
   ];
 
+  /**
+   * Validates whether a value is a positive finite price number.
+   */
   function isValidPrice(v) {
     return typeof v === 'number' && Number.isFinite(v) && v > 0;
   }
 
+  /**
+   * Generates fallback mock rows from RAW_SPECS across DATES.
+   */
   function buildMockRecords() {
     const rows = [];
-    RAW_SPECS.forEach(([name, store, rrp, prices, cycle, imageUrl, unitPrice, group]) => {
-      DATES.forEach((d, idx) => {
-        const pVal = isValidPrice(prices[idx]) ? prices[idx] : null;
-        rows.push({ date: d, canonical: name, retailer: store, price: pVal, rrp, cycle, imageUrl, unitPrice, group, outOfStock: pVal === null });
+    try {
+      RAW_SPECS.forEach(([name, store, rrp, prices, cycle, imageUrl, unitPrice, group]) => {
+        DATES.forEach((d, idx) => {
+          const pVal = isValidPrice(prices[idx]) ? prices[idx] : null;
+          rows.push({
+            date: d,
+            canonical: name,
+            retailer: store,
+            price: pVal,
+            rrp,
+            cycle,
+            imageUrl,
+            unitPrice,
+            group,
+            outOfStock: pVal === null
+          });
+        });
       });
-    });
+    } catch (e) {
+      // Fallback safely if mock generation fails
+    }
     return rows;
   }
 
@@ -121,16 +148,22 @@
   let trackedLinks = [];
   const expandedGroups = new Set();
   let favorites = new Set();
+
   try {
     const savedFavs = JSON.parse(localStorage.getItem('cw_ww_favorites') || '[]');
     if (Array.isArray(savedFavs)) favorites = new Set(savedFavs);
   } catch (e) {}
+
   function saveFavorites() {
-    try { localStorage.setItem('cw_ww_favorites', JSON.stringify(Array.from(favorites))); } catch (e) {}
+    try {
+      localStorage.setItem('cw_ww_favorites', JSON.stringify(Array.from(favorites)));
+    } catch (e) {}
   }
+
   function favKeyFor(p) {
     return p.group ? 'group:' + p.group : 'prod:' + p.canonical;
   }
+
   function isFav(p) {
     return !!p.sheetFav || favorites.has(favKeyFor(p));
   }
@@ -142,11 +175,21 @@
     return m[1].replace(/\s+/g, ' ').replace(/\bpack\b/i, 'pk').replace(/\bvalue\s+pk\b/i, 'pk').trim();
   }
 
+  /**
+   * Aggregates product history and watchlist rows by canonical product name within storeScope.
+   */
   function aggregateProducts(rows, storeScope) {
     const byProd = new Map();
     rows.forEach(r => {
       if (!byProd.has(r.canonical)) {
-        byProd.set(r.canonical, { canonical: r.canonical, retailers: new Map(), cycle: r.cycle || 0, imageUrl: r.imageUrl || '', group: r.group || '', sheetFav: !!r.favorite });
+        byProd.set(r.canonical, {
+          canonical: r.canonical,
+          retailers: new Map(),
+          cycle: r.cycle || 0,
+          imageUrl: r.imageUrl || '',
+          group: r.group || '',
+          sheetFav: !!r.favorite
+        });
       }
       const p = byProd.get(r.canonical);
       if (r.group && !p.group) p.group = r.group;
@@ -159,17 +202,23 @@
     const list = [];
     byProd.forEach(p => {
       const targetStore = storeScope === 'WW' ? 'Woolworths' : (storeScope === 'CW' ? 'Chemist Warehouse' : null);
-      let bestNow = Infinity, bestNowStore = '', bestRrp = 0, bestUnitPrice = '', low6m = Infinity, lowStore = '', lowUnitPrice = '', lastLowDate = '', latestDate = '';
-      let fallbackStore = '', fallbackRrp = 0, fallbackUnitPrice = '', fallbackPromo = '';
+      let bestNow = Infinity, bestNowStore = '', bestRrp = 0, bestUnitPrice = '';
+      let low6m = Infinity, lowStore = '', lowUnitPrice = '', lastLowDate = '', latestDate = '';
+      let fallbackStore = '', fallbackRrp = 0, fallbackUnitPrice = '';
       const storeLatest = [];
 
       p.retailers.forEach((arr, store) => {
         arr.sort((a, b) => a.date.localeCompare(b.date));
         const latest = arr[arr.length - 1];
         const latestHasPrice = isValidPrice(latest.price);
-        const isOutOfStock = !latestHasPrice || !!latest.outOfStock || /out\s*of\s*stock/i.test(latest.promo || '');
+        const isWatchlistUnlogged = !!latest.watchlistUnlogged || /watchlist\s*\/\s*no\s*price\s*yet/i.test(latest.promo || '');
+        const isOutOfStock = !latestHasPrice && !isWatchlistUnlogged && (!!latest.outOfStock || /out\s*of\s*stock/i.test(latest.promo || ''));
 
-        let storeLow = Infinity, storeLowUnit = '', storeUrl = latest.url || '', storeFullName = latest.fullName || p.canonical, storePromo = latest.promo || '';
+        let storeLow = Infinity, storeLowUnit = '';
+        let storeUrl = latest.url || '';
+        let storeFullName = latest.fullName || p.canonical;
+        let storePromo = latest.promo || '';
+
         arr.forEach(item => {
           if (isValidPrice(item.price) && item.price < storeLow) {
             storeLow = item.price;
@@ -178,14 +227,19 @@
           if (!storeUrl && item.url) storeUrl = item.url;
           if (!storeFullName && item.fullName) storeFullName = item.fullName;
         });
-        if (!storeUrl && typeof trackedLinks !== 'undefined' && Array.isArray(trackedLinks)) {
+
+        if (!storeUrl && Array.isArray(trackedLinks)) {
           const tlMatch = trackedLinks.find(t => t.canonical === p.canonical && t.retailer === store && t.url);
           if (tlMatch) storeUrl = tlMatch.url;
         }
+
+        const resolvedPromo = storePromo || (!latestHasPrice ? (isWatchlistUnlogged ? 'Watchlist / No Price Yet' : 'Out of Stock') : '');
+
         storeLatest.push({
           store,
           price: latestHasPrice ? latest.price : null,
           outOfStock: isOutOfStock,
+          watchlistUnlogged: isWatchlistUnlogged || (!latestHasPrice && !isOutOfStock),
           rrp: isValidPrice(latest.rrp) ? latest.rrp : 0,
           low: Number.isFinite(storeLow) ? storeLow : null,
           unitPrice: latest.unitPrice || '',
@@ -193,14 +247,13 @@
           url: storeUrl,
           fullName: storeFullName,
           packSize: extractPackSize(storeFullName) || extractPackSize(p.canonical),
-          promo: storePromo || (isOutOfStock ? 'Out of Stock' : '')
+          promo: resolvedPromo
         });
 
         if (!fallbackStore) {
           fallbackStore = store;
           fallbackRrp = isValidPrice(latest.rrp) ? latest.rrp : 0;
           fallbackUnitPrice = latest.unitPrice || '';
-          fallbackPromo = storePromo || (isOutOfStock ? 'Out of Stock' : '');
         }
 
         if (targetStore && store !== targetStore) return;
@@ -239,11 +292,14 @@
       const discPct = (hasAnyPrice && bestRrp > 0) ? Math.max(0, ((bestRrp - bestNow) / bestRrp) * 100) : 0;
       const isAtLowest = hasAnyPrice && hasAnyLow && bestNow <= low6m + 0.01;
       const isBuy = isAtLowest || discPct >= 30;
-      const signal = !hasAnyPrice ? 'OUT OF STOCK' : (isBuy ? 'BUY NOW' : (p.cycle > 0 ? 'WAIT' : 'EVERYDAY'));
+      const anyWatchlistUnlogged = storeLatest.some(s => !isValidPrice(s.price) && s.watchlistUnlogged);
+      const signal = !hasAnyPrice
+        ? (anyWatchlistUnlogged ? 'WATCHLIST / NO PRICE YET' : 'OUT OF STOCK')
+        : (isBuy ? 'BUY NOW' : (p.cycle > 0 ? 'WAIT' : 'EVERYDAY'));
 
       let predNextLabel = '—';
       if (!hasAnyPrice) {
-        predNextLabel = 'Out of Stock';
+        predNextLabel = anyWatchlistUnlogged ? 'Watchlist / No Price Yet' : 'Out of Stock';
       } else if (p.cycle === 0) {
         predNextLabel = 'Gathering cycle data';
       } else if (hasAnyLow && bestNow <= low6m * 1.01) {
@@ -279,7 +335,8 @@
         cycle: p.cycle,
         signal,
         isBuy,
-        isAtLowest
+        isAtLowest,
+        anyWatchlistUnlogged
       });
     });
 
@@ -323,85 +380,95 @@
     return list;
   }
 
+  /**
+   * Renders a stepped price history chart with an RRP reference line in the expanded card drawer.
+   */
   function renderChartInCanvas(canvasEl, product) {
-    if (!canvasEl || !product) return;
-    const dateSet = new Set();
-    product.retailers.forEach(arr => arr.forEach(r => dateSet.add(r.date)));
-    const labels = Array.from(dateSet).sort();
+    if (!canvasEl || !product || typeof Chart === 'undefined') return;
+    try {
+      const dateSet = new Set();
+      product.retailers.forEach(arr => arr.forEach(r => {
+        if (r.date) dateSet.add(r.date);
+      }));
+      const labels = Array.from(dateSet).sort();
 
-    const datasets = [];
-    const colors = {
-      'Woolworths': { line: '#2dd4bf', bg: 'rgba(45, 212, 191, 0.12)' },
-      'Chemist Warehouse': { line: '#60a5fa', bg: 'rgba(96, 165, 250, 0.12)' }
-    };
+      const datasets = [];
+      const colors = {
+        'Woolworths': { line: '#2dd4bf', bg: 'rgba(45, 212, 191, 0.12)' },
+        'Chemist Warehouse': { line: '#60a5fa', bg: 'rgba(96, 165, 250, 0.12)' }
+      };
 
-    let rrpSeriesAdded = false;
-    product.retailers.forEach((arr, store) => {
-      const byDate = new Map(arr.map(x => [x.date, x]));
-      const c = colors[store] || { line: '#475569', bg: 'rgba(71, 85, 105, 0.08)' };
-      datasets.push({
-        label: `${store} Price`,
-        data: labels.map(d => {
-          const rec = byDate.get(d);
-          return rec && isValidPrice(rec.price) ? rec.price : null;
-        }),
-        borderColor: c.line,
-        backgroundColor: c.bg,
-        borderWidth: 2.5,
-        stepped: true,
-        spanGaps: false,
-        tension: 0,
-        pointRadius: 4,
-        pointHoverRadius: 6
-      });
-      if (!rrpSeriesAdded) {
+      let rrpSeriesAdded = false;
+      product.retailers.forEach((arr, store) => {
+        const byDate = new Map(arr.map(x => [x.date, x]));
+        const c = colors[store] || { line: '#475569', bg: 'rgba(71, 85, 105, 0.08)' };
         datasets.push({
-          label: 'Regular RRP',
+          label: `${store} Price`,
           data: labels.map(d => {
             const rec = byDate.get(d);
-            return rec && isValidPrice(rec.rrp) ? rec.rrp : null;
+            return rec && isValidPrice(rec.price) ? rec.price : null;
           }),
-          borderColor: '#737373',
-          borderWidth: 1.5,
-          borderDash: [6, 4],
-          pointRadius: 0,
-          fill: false
+          borderColor: c.line,
+          backgroundColor: c.bg,
+          borderWidth: 2.5,
+          stepped: true,
+          spanGaps: false,
+          tension: 0,
+          pointRadius: 4,
+          pointHoverRadius: 6
         });
-        rrpSeriesAdded = true;
-      }
-    });
-
-    const ctx = canvasEl.getContext('2d');
-    if (chartInstance) chartInstance.destroy();
-    chartInstance = new Chart(ctx, {
-      type: 'line',
-      data: { labels, datasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: { position: 'top', labels: { color: '#d4d4d4', boxWidth: 14, usePointStyle: true } },
-          tooltip: {
-            callbacks: {
-              label: c => c.parsed.y === null || c.parsed.y === undefined
-                ? `${c.dataset.label}: Out of Stock`
-                : `${c.dataset.label}: $${Number(c.parsed.y).toFixed(2)}`
-            }
-          }
-        },
-        scales: {
-          y: {
-            beginAtZero: false,
-            ticks: { color: '#a3a3a3', callback: v => `$${Number(v).toFixed(2)}` },
-            grid: { color: '#262626' }
-          },
-          x: { ticks: { color: '#a3a3a3' }, grid: { display: false } }
+        if (!rrpSeriesAdded) {
+          datasets.push({
+            label: 'Regular RRP',
+            data: labels.map(d => {
+              const rec = byDate.get(d);
+              return rec && isValidPrice(rec.rrp) ? rec.rrp : null;
+            }),
+            borderColor: '#737373',
+            borderWidth: 1.5,
+            borderDash: [6, 4],
+            pointRadius: 0,
+            fill: false
+          });
+          rrpSeriesAdded = true;
         }
-      }
-    });
+      });
+
+      const ctx = canvasEl.getContext('2d');
+      if (chartInstance) chartInstance.destroy();
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { position: 'top', labels: { color: '#d4d4d4', boxWidth: 14, usePointStyle: true } },
+            tooltip: {
+              callbacks: {
+                label: c => c.parsed.y === null || c.parsed.y === undefined
+                  ? `${c.dataset.label}: Out of Stock`
+                  : `${c.dataset.label}: $${Number(c.parsed.y).toFixed(2)}`
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: false,
+              ticks: { color: '#a3a3a3', callback: v => `$${Number(v).toFixed(2)}` },
+              grid: { color: '#262626' }
+            },
+            x: { ticks: { color: '#a3a3a3' }, grid: { display: false } }
+          }
+        }
+      });
+    } catch (e) {}
   }
 
+  /**
+   * Parses CSV data from the Tracked Links tab into active link entries.
+   */
   function parseTrackedLinksCsv(text) {
     const lines = text.trim().split(/\r?\n/);
     if (lines.length < 2) return [];
@@ -443,378 +510,396 @@
     return out;
   }
 
+  /**
+   * Renders all header counters, Watchlist links view, or product cards with inline drawers.
+   */
   function renderAll() {
-    const wlBtn = document.getElementById('watchlistBtn');
-    if (wlBtn) {
-      wlBtn.innerHTML = `Watchlist <span class="ml-0.5 px-1.5 py-0.2 rounded-full bg-black/30 text-[10px]">${trackedLinks.length}</span>`;
-      wlBtn.className = watchlistMode
-        ? 'px-2 py-1 text-xs font-semibold rounded-lg bg-teal-500 text-black shadow-sm transition'
-        : 'px-2 py-1 text-xs font-medium rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 transition';
-    }
-        const combinedRows = allRows.slice();
-    if (Array.isArray(trackedLinks) && trackedLinks.length > 0) {
-      const hasLogForKey = new Set(allRows.map(r => `${r.canonical}::${r.retailer}`));
-      const latestAnyDate = allRows.reduce((m, r) => (r.date && r.date > m ? r.date : m), '') || '2026-11-19';
-      trackedLinks.forEach(tl => {
-        const key = `${tl.canonical}::${tl.retailer}`;
-        if (!hasLogForKey.has(key)) {
-          combinedRows.push({
-            date: latestAnyDate,
-            canonical: tl.canonical,
-            retailer: tl.retailer || 'Store',
-            price: null,
-            rrp: 0,
-            imageUrl: tl.imageUrl || '',
-            unitPrice: '',
-            url: tl.url || '',
-            fullName: tl.canonical,
-            promo: 'Watchlist / No Price Yet',
-            group: tl.group || '',
-            favorite: !!tl.favorite,
-            outOfStock: true,
-            cycle: 0
-          });
-        }
+    try {
+      const wlBtn = document.getElementById('watchlistBtn');
+      if (wlBtn) {
+        wlBtn.innerHTML = `Watchlist <span class="ml-0.5 px-1.5 py-0.2 rounded-full bg-black/30 text-[10px]">${trackedLinks.length}</span>`;
+        wlBtn.className = watchlistMode
+          ? 'px-2 py-1 text-xs font-semibold rounded-lg bg-teal-500 text-black shadow-sm transition'
+          : 'px-2 py-1 text-xs font-medium rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 transition';
+      }
+
+      // Build combinedRows before allAgg and scopedProducts so unlogged watchlist items appear under All
+      const combinedRows = allRows.slice();
+      if (Array.isArray(trackedLinks) && trackedLinks.length > 0) {
+        const hasLogForKey = new Set(allRows.map(r => `${r.canonical}::${r.retailer}`));
+        const latestAnyDate = allRows.reduce((m, r) => (r.date && r.date > m ? r.date : m), '') || '2026-11-19';
+        trackedLinks.forEach(tl => {
+          const key = `${tl.canonical}::${tl.retailer}`;
+          if (!hasLogForKey.has(key)) {
+            combinedRows.push({
+              date: latestAnyDate,
+              canonical: tl.canonical,
+              retailer: tl.retailer || 'Store',
+              price: null,
+              rrp: 0,
+              imageUrl: tl.imageUrl || '',
+              unitPrice: '',
+              url: tl.url || '',
+              fullName: tl.canonical,
+              promo: 'Watchlist / No Price Yet',
+              group: tl.group || '',
+              favorite: !!tl.favorite,
+              outOfStock: false,
+              watchlistUnlogged: true,
+              cycle: 0
+            });
+          }
+        });
+      }
+
+      const allAgg = aggregateProducts(combinedRows, 'ALL');
+      const q = document.getElementById('searchInput').value.trim().toLowerCase();
+
+      const searchAll = allAgg.filter(p => !q || p.canonical.toLowerCase().includes(q));
+      const counts = {
+        ALL: searchAll.length,
+        WW: searchAll.filter(p => p.retailers.has('Woolworths')).length,
+        CW: searchAll.filter(p => p.retailers.has('Chemist Warehouse')).length,
+        BOTH: searchAll.filter(p => p.storeType === 'BOTH').length
+      };
+      const labelMap = { ALL: 'All', WW: 'WW', CW: 'CW', BOTH: 'Both' };
+      document.querySelectorAll('.store-btn').forEach(btn => {
+        const k = btn.dataset.store;
+        btn.innerHTML = `${labelMap[k]} <span class="ml-0.5 px-1.5 py-0.2 rounded-full bg-black/30 text-[10px]">${counts[k]}</span>`;
       });
-    }
-    const allAgg = aggregateProducts(combinedRows, 'ALL');
-    const q = document.getElementById('searchInput').value.trim().toLowerCase();
 
-    const searchAll = allAgg.filter(p => !q || p.canonical.toLowerCase().includes(q));
-    const counts = {
-      ALL: searchAll.length,
-      WW: searchAll.filter(p => p.retailers.has('Woolworths')).length,
-      CW: searchAll.filter(p => p.retailers.has('Chemist Warehouse')).length,
-      BOTH: searchAll.filter(p => p.storeType === 'BOTH').length
-    };
-    const labelMap = { ALL: 'All', WW: 'WW', CW: 'CW', BOTH: 'Both' };
-    document.querySelectorAll('.store-btn').forEach(btn => {
-      const k = btn.dataset.store;
-      btn.innerHTML = `${labelMap[k]} <span class="ml-0.5 px-1.5 py-0.2 rounded-full bg-black/30 text-[10px]">${counts[k]}</span>`;
-    });
+      const favCount = searchAll.filter(p => isFav(p)).length;
+      const favBtn = document.getElementById('favFilterBtn');
+      favBtn.innerHTML = `★ <span class="ml-0.5 px-1.5 py-0.2 rounded-full bg-black/30 text-[10px]">${favCount}</span>`;
+      favBtn.className = favOnly
+        ? 'px-2 py-1 text-xs font-semibold rounded-lg bg-amber-500 text-black shadow-sm transition'
+        : 'px-2 py-1 text-xs font-medium rounded-lg border border-amber-700/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/50 transition';
 
-    const favCount = searchAll.filter(p => isFav(p)).length;
-    const favBtn = document.getElementById('favFilterBtn');
-    favBtn.innerHTML = `★ <span class="ml-0.5 px-1.5 py-0.2 rounded-full bg-black/30 text-[10px]">${favCount}</span>`;
-    favBtn.className = favOnly
-      ? 'px-2 py-1 text-xs font-semibold rounded-lg bg-amber-500 text-black shadow-sm transition'
-      : 'px-2 py-1 text-xs font-medium rounded-lg border border-amber-700/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/50 transition';
+      const scopedProducts = aggregateProducts(combinedRows, storeFilter);
 
-    const scopedProducts = aggregateProducts(combinedRows, storeFilter);
-
-    const filtered = scopedProducts.filter(p => {
-      if (q && !p.canonical.toLowerCase().includes(q)) return false;
-      if (favOnly && !isFav(p)) return false;
-      if (storeFilter === 'WW') return p.retailers.has('Woolworths');
-      if (storeFilter === 'CW') return p.retailers.has('Chemist Warehouse');
-      if (storeFilter === 'BOTH') return p.storeType === 'BOTH';
-      return true;
-    });
-
-    document.getElementById('visibleCountLabel').textContent = `Showing ${filtered.length} product${filtered.length === 1 ? '' : 's'}`;
-    const grid = document.getElementById('productCardGrid');
-    grid.innerHTML = '';
-
-    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
-
-    if (watchlistMode) {
-      const loggedKeys = new Set(allRows.filter(r => isValidPrice(r.price)).map(r => `${r.canonical}::${r.retailer}`));
-      const wlItems = trackedLinks.filter(item => {
-        if (q && !item.canonical.toLowerCase().includes(q) && !item.group.toLowerCase().includes(q)) return false;
-        if (storeFilter === 'WW') return item.retailer === 'Woolworths';
-        if (storeFilter === 'CW') return item.retailer === 'Chemist Warehouse';
+      const filtered = scopedProducts.filter(p => {
+        if (q && !p.canonical.toLowerCase().includes(q)) return false;
+        if (favOnly && !isFav(p)) return false;
+        if (storeFilter === 'WW') return p.retailers.has('Woolworths');
+        if (storeFilter === 'CW') return p.retailers.has('Chemist Warehouse');
+        if (storeFilter === 'BOTH') return p.storeType === 'BOTH';
         return true;
-      }).sort((a, b) => {
-        const aHas = loggedKeys.has(`${a.canonical}::${a.retailer}`) ? 1 : 0;
-        const bHas = loggedKeys.has(`${b.canonical}::${b.retailer}`) ? 1 : 0;
-        if (aHas !== bHas) return aHas - bHas;
-        return a.canonical.localeCompare(b.canonical) || a.retailer.localeCompare(b.retailer);
       });
-      document.getElementById('visibleCountLabel').textContent = `Watchlist: ${wlItems.length} link${wlItems.length === 1 ? '' : 's'}`;
-      if (wlItems.length === 0) {
-        grid.innerHTML = '<div class="col-span-full py-8 text-center text-sm text-neutral-400">No watchlist links found.</div>';
-        return;
-      }
-      wlItems.forEach((item, idx) => {
-        const hasPrice = loggedKeys.has(`${item.canonical}::${item.retailer}`);
-        const card = document.createElement('div');
-        card.className = `rounded-xl border p-3 flex items-center gap-3 ${idx % 2 === 0 ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-900 border-neutral-700/80'}`;
-        const badge = item.retailer === 'Woolworths'
-          ? '<span class="px-2 py-0.5 text-[11px] font-medium rounded bg-teal-950 text-teal-300 border border-teal-800">WW</span>'
-          : '<span class="px-2 py-0.5 text-[11px] font-medium rounded bg-indigo-950 text-indigo-300 border border-indigo-800">CW</span>';
-        const statusPill = hasPrice
-          ? '<span class="px-2 py-0.5 text-[10px] font-medium rounded bg-emerald-950 text-emerald-300 border border-emerald-800/70">Price Logged</span>'
-          : '<span class="px-2 py-0.5 text-[10px] font-medium rounded bg-amber-950 text-amber-300 border border-amber-700/70">Watchlist / No Price Yet</span>';
-        const thumb = item.imageUrl
-          ? `<img src="${item.imageUrl}" alt="${item.canonical}" class="w-14 h-14 rounded-lg object-contain bg-white p-1 border border-neutral-700 shrink-0" />`
-          : `<div class="w-14 h-14 rounded-lg bg-neutral-800 border border-neutral-700 shrink-0"></div>`;
-        card.innerHTML = `
-          ${thumb}
-          <div class="flex-1 min-w-0 space-y-1">
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-xs font-semibold text-white leading-snug break-words">${item.canonical}</span>
-              ${badge}
-            </div>
-            <div class="flex flex-wrap items-center gap-1.5">
-              ${statusPill}
-              ${item.group ? `<span class="text-[10px] text-purple-300">Group: ${item.group}</span>` : ''}
-            </div>
-            ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer" class="inline-block text-[11px] text-teal-400 hover:underline">Open product page &rarr;</a>` : ''}
-          </div>
-        `;
-        grid.appendChild(card);
-      });
-      return;
-    }
 
-    if (filtered.length === 0) {
-      grid.innerHTML = '<div class="col-span-full py-8 text-center text-sm text-slate-500">No products match your filter.</div>';
-      return;
-    }
+      document.getElementById('visibleCountLabel').textContent = `Showing ${filtered.length} product${filtered.length === 1 ? '' : 's'}`;
+      const grid = document.getElementById('productCardGrid');
+      grid.innerHTML = '';
 
-    let expandedCanvas = null;
-    let expandedProd = null;
-
-    const groupCounts = new Map();
-    const groupSeen = new Map();
-    filtered.forEach(p => {
-      if (p.group) groupCounts.set(p.group, (groupCounts.get(p.group) || 0) + 1);
-    });
-
-    const visibleItems = [];
-    filtered.forEach(p => {
-      if (!p.group) {
-        visibleItems.push({ p, isGroupTop: false, extraCount: 0, isGroupChild: false });
-        return;
-      }
-      const seen = groupSeen.get(p.group) || 0;
-      groupSeen.set(p.group, seen + 1);
-      const totalInGroup = groupCounts.get(p.group) || 1;
-      const isExpanded = !!q || expandedGroups.has(p.group);
-      if (seen === 0) {
-        visibleItems.push({ p, isGroupTop: totalInGroup > 1, extraCount: totalInGroup - 1, isExpanded, isGroupChild: false });
-      } else if (isExpanded) {
-        visibleItems.push({ p, isGroupTop: false, extraCount: 0, isExpanded: true, isGroupChild: true });
-      }
-    });
-
-    visibleItems.forEach(({ p, isGroupTop, extraCount, isExpanded, isGroupChild }) => {
-      const card = document.createElement('div');
-      const active = p.canonical === selectedCanonical;
-      const isAtLowest = !!p.isAtLowest;
-      const hasBestNow = isValidPrice(p.bestNow);
-      const hasLow6m = isValidPrice(p.low6m);
-
-      const baseBg = 'bg-neutral-950';
-      let tierCard = `${baseBg} border-neutral-800 hover:border-neutral-600`;
-      let discPill = '<span class="text-xs text-neutral-400">0% off</span>';
-
-      if (!hasBestNow) {
-        discPill = '<span class="px-2 py-0.5 text-xs font-medium rounded bg-neutral-800/90 text-amber-300 border border-amber-700/50">Out of Stock</span>';
-      } else if (p.discPct >= 25) {
-        tierCard = `${baseBg} border-amber-500/80 hover:border-amber-400`;
-        discPill = `<span class="px-2 py-0.5 text-xs font-bold rounded bg-amber-500/25 text-amber-200 border border-amber-500/40">${p.discPct.toFixed(0)}% off</span>`;
-      } else if (p.discPct > 0) {
-        tierCard = `${baseBg} border-neutral-800 hover:border-neutral-600`;
-        discPill = `<span class="px-2 py-0.5 text-xs font-medium rounded bg-neutral-800/90 text-neutral-300 border border-neutral-700">${p.discPct.toFixed(0)}% off</span>`;
+      if (chartInstance) {
+        chartInstance.destroy();
+        chartInstance = null;
       }
 
-      const lowestAccent = isAtLowest ? 'border-l-4 border-l-cyan-400' : '';
-
-      card.className = active
-        ? `col-span-full cursor-pointer rounded-xl border-2 border-teal-400 ${lowestAccent} bg-neutral-900 p-4 transition shadow-lg flex flex-col gap-3`
-        : `cursor-pointer rounded-xl border ${tierCard} ${lowestAccent} p-3.5 transition flex flex-col justify-between gap-2.5`;
-
-      const initials = p.canonical.split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
-      const thumbHtml = p.imageUrl
-        ? `<img src="${p.imageUrl}" alt="${p.canonical}" class="w-20 h-20 sm:w-28 sm:h-28 rounded-xl object-contain bg-white p-1 border border-neutral-700" />`
-        : `<div class="w-20 h-20 sm:w-28 sm:h-28 rounded-xl bg-neutral-800 border border-neutral-700 text-neutral-300 text-lg font-bold flex items-center justify-center">${initials}</div>`;
-      const bestStoreObj = p.storeLatest.find(x => x.store === p.bestNowStore) || {};
-      const bestPackTag = bestStoreObj.packSize ? ` &middot; ${bestStoreObj.packSize}` : '';
-      const bestStoreCls = p.bestNowStore === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300';
-      const bestStoreShort = p.bestNowStore === 'Woolworths' ? 'WW' : 'CW';
-      const lowStoreCls = p.lowStore === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300';
-      const lowStoreShort = p.lowStore === 'Woolworths' ? 'WW' : 'CW';
-
-      const starBtnHtml = `<button type="button" class="fav-star-btn inline-block mr-1 align-baseline text-sm leading-none ${isFav(p) ? 'text-amber-400' : 'text-neutral-500 hover:text-amber-300'}" title="${p.group ? 'Favorite group: ' + p.group : 'Favorite product'}">${isFav(p) ? '★' : '☆'}</button>`;
-
-      const nowPriceHtml = hasBestNow
-        ? `<div class="text-sm font-bold whitespace-nowrap ${isAtLowest ? 'text-emerald-300' : 'text-white'}">$${p.bestNow.toFixed(2)} ${p.bestRrp > p.bestNow ? `<span class="text-[11px] font-normal text-neutral-400 line-through">$${p.bestRrp.toFixed(2)}</span>` : ''}</div>`
-        : `<div class="text-xs font-semibold whitespace-nowrap text-amber-300">Out of Stock</div>`;
-
-      const lowPriceHtml = hasLow6m
-        ? `<div class="text-sm font-semibold text-emerald-300">$${p.low6m.toFixed(2)}</div>`
-        : `<div class="text-xs font-medium text-neutral-400">—</div>`;
-
-      const otherStoreHtml = (() => {
-        const other = p.storeLatest.find(x => x.store !== p.bestNowStore);
-        if (!other) return '';
-        const sc = other.store === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300';
-        const sn = other.store === 'Woolworths' ? 'WW' : 'CW';
-        const pt = other.packSize ? ` &middot; ${other.packSize}` : '';
-        const otherNowVal = isValidPrice(other.price)
-          ? `<div class="font-bold whitespace-nowrap text-white">$${other.price.toFixed(2)}</div>`
-          : `<div class="text-xs font-semibold whitespace-nowrap text-amber-300">Out of Stock</div>`;
-        const otherLowVal = isValidPrice(other.low)
-          ? `<div class="font-semibold whitespace-nowrap text-emerald-300">$${other.low.toFixed(2)}</div>`
-          : `<div class="text-xs font-medium whitespace-nowrap text-neutral-400">—</div>`;
-        return `<div class="grid grid-cols-2 gap-2 pt-1.5 border-t border-neutral-800/80 text-[11px]"><div><div class="text-[10px] text-neutral-400">Now <span class="${sc} font-semibold">(${sn}${pt})</span></div>${otherNowVal}${other.unitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${other.unitPrice}</div>` : ''}</div><div class="text-right"><div class="text-[10px] text-neutral-400">Lowest <span class="${sc} font-semibold">(${sn})</span></div>${otherLowVal}${other.lowUnitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${other.lowUnitPrice}</div>` : ''}</div></div>`;
-      })();
-
-      card.innerHTML = `
-        <div class="flex items-stretch gap-2.5 sm:gap-3">
-          <div class="w-20 sm:w-28 shrink-0 flex flex-col gap-1.5">
-            ${thumbHtml}
-            <h3 class="text-xs font-semibold text-white leading-snug break-words">${starBtnHtml}${p.canonical}</h3>
-          </div>
-          <div class="flex-1 min-w-0 flex flex-col justify-between gap-2">
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                <div class="text-[10px] text-neutral-400">Now <span class="${bestStoreCls} font-semibold">(${bestStoreShort}${bestPackTag})</span></div>
-                ${nowPriceHtml}
-                ${p.bestUnitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${p.bestUnitPrice}</div>` : ''}
+      if (watchlistMode) {
+        const loggedKeys = new Set(allRows.filter(r => isValidPrice(r.price)).map(r => `${r.canonical}::${r.retailer}`));
+        const wlItems = trackedLinks.filter(item => {
+          if (q && !item.canonical.toLowerCase().includes(q) && !item.group.toLowerCase().includes(q)) return false;
+          if (storeFilter === 'WW') return item.retailer === 'Woolworths';
+          if (storeFilter === 'CW') return item.retailer === 'Chemist Warehouse';
+          return true;
+        }).sort((a, b) => {
+          const aHas = loggedKeys.has(`${a.canonical}::${a.retailer}`) ? 1 : 0;
+          const bHas = loggedKeys.has(`${b.canonical}::${b.retailer}`) ? 1 : 0;
+          if (aHas !== bHas) return aHas - bHas;
+          return a.canonical.localeCompare(b.canonical) || a.retailer.localeCompare(b.retailer);
+        });
+        document.getElementById('visibleCountLabel').textContent = `Watchlist: ${wlItems.length} link${wlItems.length === 1 ? '' : 's'}`;
+        if (wlItems.length === 0) {
+          grid.innerHTML = '<div class="col-span-full py-8 text-center text-sm text-neutral-400">No watchlist links found.</div>';
+          return;
+        }
+        wlItems.forEach((item, idx) => {
+          const hasPrice = loggedKeys.has(`${item.canonical}::${item.retailer}`);
+          const card = document.createElement('div');
+          card.className = `rounded-xl border p-3 flex items-center gap-3 ${idx % 2 === 0 ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-900 border-neutral-700/80'}`;
+          const badge = item.retailer === 'Woolworths'
+            ? '<span class="px-2 py-0.5 text-[11px] font-medium rounded bg-teal-950 text-teal-300 border border-teal-800">WW</span>'
+            : '<span class="px-2 py-0.5 text-[11px] font-medium rounded bg-indigo-950 text-indigo-300 border border-indigo-800">CW</span>';
+          const statusPill = hasPrice
+            ? '<span class="px-2 py-0.5 text-[10px] font-medium rounded bg-emerald-950 text-emerald-300 border border-emerald-800/70">Price Logged</span>'
+            : '<span class="px-2 py-0.5 text-[10px] font-medium rounded bg-amber-950 text-amber-300 border border-amber-700/70">Watchlist / No Price Yet</span>';
+          const thumb = item.imageUrl
+            ? `<img src="${item.imageUrl}" alt="${item.canonical}" onerror="this.onerror=null;this.src='https://placehold.co/80x80/171717/d4d4d4?text=Item';" class="w-14 h-14 rounded-lg object-contain bg-white p-1 border border-neutral-700 shrink-0" />`
+            : `<div class="w-14 h-14 rounded-lg bg-neutral-800 border border-neutral-700 shrink-0"></div>`;
+          card.innerHTML = `
+            ${thumb}
+            <div class="flex-1 min-w-0 space-y-1">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-xs font-semibold text-white leading-snug break-words">${item.canonical}</span>
+                ${badge}
               </div>
-              <div class="text-right">
-                <div class="text-[10px] text-neutral-400">Lowest <span class="${lowStoreCls} font-semibold">(${lowStoreShort})</span></div>
-                ${lowPriceHtml}
-                ${p.lowUnitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${p.lowUnitPrice}</div>` : ''}
+              <div class="flex flex-wrap items-center gap-1.5">
+                ${statusPill}
+                ${item.group ? `<span class="text-[10px] text-purple-300">Group: ${item.group}</span>` : ''}
               </div>
-            </div>
-            <div class="flex items-center justify-between gap-2 pt-1.5 border-t border-neutral-800">
-              <div>${discPill}</div>
-              <div class="text-right">
-                <div class="text-[10px] text-neutral-400">Next low</div>
-                <div class="text-[11px] font-medium text-neutral-200">${p.predNextLabel === 'At Lowest Now' ? '<span class="inline-block px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 font-semibold">At Lowest Now</span>' : p.predNextLabel}</div>
-              </div>
-            </div>
-            ${p.group ? `<div class="flex items-center justify-between gap-2 text-[10px] pt-1 border-t border-neutral-800/80 text-purple-300"><span class="truncate">${isGroupChild ? '↳ ' : ''}${p.group}</span>${isGroupTop ? `<button type="button" class="group-toggle-btn shrink-0 px-2 py-0.5 rounded bg-purple-950/80 border border-purple-700/70 text-purple-200 hover:bg-purple-900 font-semibold" data-group="${p.group.replace(/"/g, '&quot;')}">${isExpanded ? 'Hide ' + extraCount + ' &#9650;' : '+' + extraCount + ' more &#9660;'}</button>` : ''}</div>` : ''}
-            ${otherStoreHtml}
-          </div>
-        </div>
-      `;
-
-      if (active) {
-        const drawer = document.createElement('div');
-        drawer.className = 'pt-3 mt-1 border-t border-neutral-700 space-y-3';
-        const storeDetailCards = p.storeLatest.map(s => {
-          const isWW = s.store === 'Woolworths';
-          const badgeCls = isWW
-            ? 'bg-teal-950 text-teal-300 border-teal-800'
-            : 'bg-indigo-950 text-indigo-300 border-indigo-800';
-          const linkHtml = s.url
-            ? `<a href="${s.url}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-teal-300 text-[11px] font-semibold border border-neutral-700 transition">Open ${isWW ? 'Woolworths' : 'Chemist Warehouse'} &rarr;</a>`
-            : '';
-          const sHasPrice = isValidPrice(s.price);
-          const sHasLow = isValidPrice(s.low);
-          const sNowText = sHasPrice
-            ? `Now <strong class="text-white">$${s.price.toFixed(2)}</strong>${s.rrp > s.price ? `<span class="line-through text-neutral-500 ml-1">$${s.rrp.toFixed(2)}</span>` : ''}`
-            : `Now <strong class="text-amber-300">Out of Stock</strong>`;
-          const sLowText = sHasLow
-            ? `Low <strong class="text-emerald-300">$${s.low.toFixed(2)}</strong>`
-            : `Low <strong class="text-neutral-400">—</strong>`;
-          return `
-            <div class="rounded-lg border border-neutral-800 bg-neutral-950/80 p-2.5 flex flex-col justify-between gap-2">
-              <div class="space-y-1">
-                <div class="flex flex-wrap items-center justify-between gap-1.5">
-                  <span class="px-2 py-0.5 text-[11px] font-semibold rounded border ${badgeCls}">${s.store}</span>
-                  ${s.promo ? `<span class="text-[10px] text-amber-300 font-medium">${s.promo}</span>` : ''}
-                </div>
-                <div class="text-xs font-medium text-white leading-snug">${s.fullName || p.canonical}</div>
-              </div>
-              <div class="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-neutral-800/80 text-[11px]">
-                <div class="text-neutral-300">
-                  ${sNowText}
-                  ${s.unitPrice ? `<span class="text-teal-300 font-semibold ml-1.5">(${s.unitPrice})</span>` : ''}
-                  <span class="text-neutral-500 mx-1">&middot;</span>
-                  ${sLowText}
-                </div>
-                ${linkHtml}
-              </div>
+              ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer" class="inline-block text-[11px] text-teal-400 hover:underline">Open product page &rarr;</a>` : ''}
             </div>
           `;
-        }).join('');
+          grid.appendChild(card);
+        });
+        return;
+      }
 
-        const groupSiblings = p.group
-          ? allAgg.filter(x => x.group === p.group && x.canonical !== p.canonical)
-          : [];
-        const siblingsHtml = groupSiblings.length > 0
-          ? `<div class="rounded-lg border border-purple-900/50 bg-purple-950/20 p-2.5 space-y-1.5">
-              <div class="text-[11px] font-semibold text-purple-300">Other sizes / options in "${p.group}"</div>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                ${groupSiblings.map(sib => {
-                  const sibUrl = (sib.storeLatest.find(x => x.store === sib.bestNowStore) || sib.storeLatest[0] || {}).url || '';
-                  const sibPriceDisplay = isValidPrice(sib.bestNow)
-                    ? `<strong class="text-white">$${sib.bestNow.toFixed(2)}</strong>`
-                    : `<strong class="text-amber-300">Out of Stock</strong>`;
-                  return `<div class="flex items-center justify-between gap-2 text-[11px] bg-neutral-950/70 border border-neutral-800 rounded px-2 py-1">
-                    <span class="text-neutral-200 truncate" title="${sib.canonical}">${sib.canonical}</span>
-                    <span class="shrink-0 text-right">
-                      ${sibPriceDisplay}
-                      ${sib.bestUnitPrice ? `<span class="text-teal-300 ml-1">(${sib.bestUnitPrice})</span>` : ''}
-                      ${sibUrl ? `<a href="${sibUrl}" target="_blank" rel="noopener noreferrer" class="text-teal-400 hover:underline ml-1.5">&nearr;</a>` : ''}
-                    </span>
-                  </div>`;
-                }).join('')}
+      if (filtered.length === 0) {
+        grid.innerHTML = '<div class="col-span-full py-8 text-center text-sm text-neutral-400">No products match your filter.</div>';
+        return;
+      }
+
+      let expandedCanvas = null;
+      let expandedProd = null;
+
+      const groupCounts = new Map();
+      const groupSeen = new Map();
+      filtered.forEach(p => {
+        if (p.group) groupCounts.set(p.group, (groupCounts.get(p.group) || 0) + 1);
+      });
+
+      const visibleItems = [];
+      filtered.forEach(p => {
+        if (!p.group) {
+          visibleItems.push({ p, isGroupTop: false, extraCount: 0, isGroupChild: false });
+          return;
+        }
+        const seen = groupSeen.get(p.group) || 0;
+        groupSeen.set(p.group, seen + 1);
+        const totalInGroup = groupCounts.get(p.group) || 1;
+        const isExpanded = !!q || expandedGroups.has(p.group);
+        if (seen === 0) {
+          visibleItems.push({ p, isGroupTop: totalInGroup > 1, extraCount: totalInGroup - 1, isExpanded, isGroupChild: false });
+        } else if (isExpanded) {
+          visibleItems.push({ p, isGroupTop: false, extraCount: 0, isExpanded: true, isGroupChild: true });
+        }
+      });
+
+      visibleItems.forEach(({ p, isGroupTop, extraCount, isExpanded, isGroupChild }) => {
+        const card = document.createElement('div');
+        const active = p.canonical === selectedCanonical;
+        const isAtLowest = !!p.isAtLowest;
+        const hasBestNow = isValidPrice(p.bestNow);
+        const hasLow6m = isValidPrice(p.low6m);
+
+        const baseBg = 'bg-neutral-950';
+        let tierCard = `${baseBg} border-neutral-800 hover:border-neutral-600`;
+        let discPill = '<span class="text-xs text-neutral-400">0% off</span>';
+
+        if (!hasBestNow) {
+          const noPriceLabel = p.anyWatchlistUnlogged ? 'Watchlist / No Price Yet' : 'Out of Stock';
+          discPill = `<span class="px-2 py-0.5 text-xs font-medium rounded bg-neutral-800/90 text-amber-300 border border-amber-700/50">${noPriceLabel}</span>`;
+        } else if (p.discPct >= 25) {
+          tierCard = `${baseBg} border-amber-500/80 hover:border-amber-400`;
+          discPill = `<span class="px-2 py-0.5 text-xs font-bold rounded bg-amber-500/25 text-amber-200 border border-amber-500/40">${p.discPct.toFixed(0)}% off</span>`;
+        } else if (p.discPct > 0) {
+          tierCard = `${baseBg} border-neutral-800 hover:border-neutral-600`;
+          discPill = `<span class="px-2 py-0.5 text-xs font-medium rounded bg-neutral-800/90 text-neutral-300 border border-neutral-700">${p.discPct.toFixed(0)}% off</span>`;
+        }
+
+        const lowestAccent = isAtLowest ? 'border-l-4 border-l-cyan-400' : '';
+
+        card.className = active
+          ? `col-span-full cursor-pointer rounded-xl border-2 border-teal-400 ${lowestAccent} bg-neutral-900 p-4 transition shadow-lg flex flex-col gap-3`
+          : `cursor-pointer rounded-xl border ${tierCard} ${lowestAccent} p-3.5 transition flex flex-col justify-between gap-2.5`;
+
+        const initials = p.canonical.split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+        const thumbHtml = p.imageUrl
+          ? `<img src="${p.imageUrl}" alt="${p.canonical}" onerror="this.onerror=null;this.src='https://placehold.co/112x112/171717/d4d4d4?text=${encodeURIComponent(initials || 'SKU')}';" class="w-20 h-20 sm:w-28 sm:h-28 rounded-xl object-contain bg-white p-1 border border-neutral-700" />`
+          : `<div class="w-20 h-20 sm:w-28 sm:h-28 rounded-xl bg-neutral-800 border border-neutral-700 text-neutral-300 text-lg font-bold flex items-center justify-center">${initials}</div>`;
+        const bestStoreObj = p.storeLatest.find(x => x.store === p.bestNowStore) || {};
+        const bestPackTag = bestStoreObj.packSize ? ` &middot; ${bestStoreObj.packSize}` : '';
+        const bestStoreCls = p.bestNowStore === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300';
+        const bestStoreShort = p.bestNowStore === 'Woolworths' ? 'WW' : 'CW';
+        const lowStoreCls = p.lowStore === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300';
+        const lowStoreShort = p.lowStore === 'Woolworths' ? 'WW' : 'CW';
+
+        const starBtnHtml = `<button type="button" class="fav-star-btn inline-block mr-1 align-baseline text-sm leading-none ${isFav(p) ? 'text-amber-400' : 'text-neutral-500 hover:text-amber-300'}" title="${p.group ? 'Favorite group: ' + p.group : 'Favorite product'}">${isFav(p) ? '★' : '☆'}</button>`;
+
+        const nowPriceHtml = hasBestNow
+          ? `<div class="text-sm font-bold whitespace-nowrap ${isAtLowest ? 'text-emerald-300' : 'text-white'}">$${p.bestNow.toFixed(2)} ${p.bestRrp > p.bestNow ? `<span class="text-[11px] font-normal text-neutral-400 line-through">$${p.bestRrp.toFixed(2)}</span>` : ''}</div>`
+          : `<div class="text-xs font-semibold whitespace-nowrap text-amber-300">${bestStoreObj.watchlistUnlogged ? 'No Price Yet' : 'Out of Stock'}</div>`;
+
+        const lowPriceHtml = hasLow6m
+          ? `<div class="text-sm font-semibold text-emerald-300">$${p.low6m.toFixed(2)}</div>`
+          : `<div class="text-xs font-medium text-neutral-400">—</div>`;
+
+        const otherStoreHtml = (() => {
+          const other = p.storeLatest.find(x => x.store !== p.bestNowStore);
+          if (!other) return '';
+          const sc = other.store === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300';
+          const sn = other.store === 'Woolworths' ? 'WW' : 'CW';
+          const pt = other.packSize ? ` &middot; ${other.packSize}` : '';
+          const otherNowVal = isValidPrice(other.price)
+            ? `<div class="font-bold whitespace-nowrap text-white">$${other.price.toFixed(2)}</div>`
+            : `<div class="text-xs font-semibold whitespace-nowrap text-amber-300">${other.watchlistUnlogged ? 'No Price Yet' : 'Out of Stock'}</div>`;
+          const otherLowVal = isValidPrice(other.low)
+            ? `<div class="font-semibold whitespace-nowrap text-emerald-300">$${other.low.toFixed(2)}</div>`
+            : `<div class="text-xs font-medium whitespace-nowrap text-neutral-400">—</div>`;
+          return `<div class="grid grid-cols-2 gap-2 pt-1.5 border-t border-neutral-800/80 text-[11px]"><div><div class="text-[10px] text-neutral-400">Now <span class="${sc} font-semibold">(${sn}${pt})</span></div>${otherNowVal}${other.unitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${other.unitPrice}</div>` : ''}</div><div class="text-right"><div class="text-[10px] text-neutral-400">Lowest <span class="${sc} font-semibold">(${sn})</span></div>${otherLowVal}${other.lowUnitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${other.lowUnitPrice}</div>` : ''}</div></div>`;
+        })();
+
+        card.innerHTML = `
+          <div class="flex items-stretch gap-2.5 sm:gap-3">
+            <div class="w-20 sm:w-28 shrink-0 flex flex-col gap-1.5">
+              ${thumbHtml}
+              <h3 class="text-xs font-semibold text-white leading-snug break-words">${starBtnHtml}${p.canonical}</h3>
+            </div>
+            <div class="flex-1 min-w-0 flex flex-col justify-between gap-2">
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <div class="text-[10px] text-neutral-400">Now <span class="${bestStoreCls} font-semibold">(${bestStoreShort}${bestPackTag})</span></div>
+                  ${nowPriceHtml}
+                  ${p.bestUnitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${p.bestUnitPrice}</div>` : ''}
+                </div>
+                <div class="text-right">
+                  <div class="text-[10px] text-neutral-400">Lowest <span class="${lowStoreCls} font-semibold">(${lowStoreShort})</span></div>
+                  ${lowPriceHtml}
+                  ${p.lowUnitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${p.lowUnitPrice}</div>` : ''}
+                </div>
               </div>
-            </div>`
-          : '';
-
-        const bestNowSummary = hasBestNow
-          ? `Best now: <strong class="text-teal-300">$${p.bestNow.toFixed(2)}</strong> (${p.bestNowStore})${p.bestUnitPrice ? ` &middot; <strong class="text-emerald-300">${p.bestUnitPrice}</strong>` : ''}`
-          : `Status: <strong class="text-amber-300">Out of Stock</strong>`;
-
-        drawer.innerHTML = `
-          <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-300">
-            <span>Tracked at: <strong class="text-white">${p.stores.join(' &amp; ')}</strong> &middot; ${bestNowSummary}</span>
-            <span>Avg cycle: <strong class="text-white">${p.cycle > 0 ? '~' + p.cycle + ' days' : 'Static'}</strong></span>
-          </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            ${storeDetailCards}
-          </div>
-          ${siblingsHtml}
-          <div class="relative h-64 sm:h-72 w-full">
-            <canvas class="inline-price-chart"></canvas>
+              <div class="flex items-center justify-between gap-2 pt-1.5 border-t border-neutral-800">
+                <div>${discPill}</div>
+                <div class="text-right">
+                  <div class="text-[10px] text-neutral-400">Next low</div>
+                  <div class="text-[11px] font-medium text-neutral-200">${p.predNextLabel === 'At Lowest Now' ? '<span class="inline-block px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 font-semibold">At Lowest Now</span>' : p.predNextLabel}</div>
+                </div>
+              </div>
+              ${p.group ? `<div class="flex items-center justify-between gap-2 text-[10px] pt-1 border-t border-neutral-800/80 text-purple-300"><span class="truncate">${isGroupChild ? '↳ ' : ''}${p.group}</span>${isGroupTop ? `<button type="button" class="group-toggle-btn shrink-0 px-2 py-0.5 rounded bg-purple-950/80 border border-purple-700/70 text-purple-200 hover:bg-purple-900 font-semibold" data-group="${p.group.replace(/"/g, '&quot;')}">${isExpanded ? 'Hide ' + extraCount + ' &#9650;' : '+' + extraCount + ' more &#9660;'}</button>` : ''}</div>` : ''}
+              ${otherStoreHtml}
+            </div>
           </div>
         `;
-        drawer.addEventListener('click', e => e.stopPropagation());
-        card.appendChild(drawer);
-        expandedCanvas = drawer.querySelector('canvas');
-        expandedProd = p;
-      }
 
-      const grpBtn = card.querySelector('.group-toggle-btn');
-      if (grpBtn) {
-        grpBtn.addEventListener('click', e => {
-          e.stopPropagation();
-          const gName = grpBtn.dataset.group;
-          if (expandedGroups.has(gName)) expandedGroups.delete(gName);
-          else expandedGroups.add(gName);
+        if (active) {
+          const drawer = document.createElement('div');
+          drawer.className = 'pt-3 mt-1 border-t border-neutral-700 space-y-3';
+          const storeDetailCards = p.storeLatest.map(s => {
+            const isWW = s.store === 'Woolworths';
+            const badgeCls = isWW
+              ? 'bg-teal-950 text-teal-300 border-teal-800'
+              : 'bg-indigo-950 text-indigo-300 border-indigo-800';
+            const linkHtml = s.url
+              ? `<a href="${s.url}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-teal-300 text-[11px] font-semibold border border-neutral-700 transition">Open ${isWW ? 'Woolworths' : 'Chemist Warehouse'} &rarr;</a>`
+              : '';
+            const sHasPrice = isValidPrice(s.price);
+            const sHasLow = isValidPrice(s.low);
+            const sNowText = sHasPrice
+              ? `Now <strong class="text-white">$${s.price.toFixed(2)}</strong>${s.rrp > s.price ? `<span class="line-through text-neutral-500 ml-1">$${s.rrp.toFixed(2)}</span>` : ''}`
+              : `Now <strong class="text-amber-300">${s.watchlistUnlogged ? 'Watchlist / No Price Yet' : 'Out of Stock'}</strong>`;
+            const sLowText = sHasLow
+              ? `Low <strong class="text-emerald-300">$${s.low.toFixed(2)}</strong>`
+              : `Low <strong class="text-neutral-400">—</strong>`;
+            return `
+              <div class="rounded-lg border border-neutral-800 bg-neutral-950/80 p-2.5 flex flex-col justify-between gap-2">
+                <div class="space-y-1">
+                  <div class="flex flex-wrap items-center justify-between gap-1.5">
+                    <span class="px-2 py-0.5 text-[11px] font-semibold rounded border ${badgeCls}">${s.store}</span>
+                    ${s.promo ? `<span class="text-[10px] text-amber-300 font-medium">${s.promo}</span>` : ''}
+                  </div>
+                  <div class="text-xs font-medium text-white leading-snug">${s.fullName || p.canonical}</div>
+                </div>
+                <div class="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-neutral-800/80 text-[11px]">
+                  <div class="text-neutral-300">
+                    ${sNowText}
+                    ${s.unitPrice ? `<span class="text-teal-300 font-semibold ml-1.5">(${s.unitPrice})</span>` : ''}
+                    <span class="text-neutral-500 mx-1">&middot;</span>
+                    ${sLowText}
+                  </div>
+                  ${linkHtml}
+                </div>
+              </div>
+            `;
+          }).join('');
+
+          const groupSiblings = p.group
+            ? allAgg.filter(x => x.group === p.group && x.canonical !== p.canonical)
+            : [];
+          const siblingsHtml = groupSiblings.length > 0
+            ? `<div class="rounded-lg border border-purple-900/50 bg-purple-950/20 p-2.5 space-y-1.5">
+                <div class="text-[11px] font-semibold text-purple-300">Other sizes / options in "${p.group}"</div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  ${groupSiblings.map(sib => {
+                    const sibUrl = (sib.storeLatest.find(x => x.store === sib.bestNowStore) || sib.storeLatest[0] || {}).url || '';
+                    const sibPriceDisplay = isValidPrice(sib.bestNow)
+                      ? `<strong class="text-white">$${sib.bestNow.toFixed(2)}</strong>`
+                      : `<strong class="text-amber-300">${sib.anyWatchlistUnlogged ? 'No Price Yet' : 'Out of Stock'}</strong>`;
+                    return `<div class="flex items-center justify-between gap-2 text-[11px] bg-neutral-950/70 border border-neutral-800 rounded px-2 py-1">
+                      <span class="text-neutral-200 truncate" title="${sib.canonical}">${sib.canonical}</span>
+                      <span class="shrink-0 text-right">
+                        ${sibPriceDisplay}
+                        ${sib.bestUnitPrice ? `<span class="text-teal-300 ml-1">(${sib.bestUnitPrice})</span>` : ''}
+                        ${sibUrl ? `<a href="${sibUrl}" target="_blank" rel="noopener noreferrer" class="text-teal-400 hover:underline ml-1.5">&nearr;</a>` : ''}
+                      </span>
+                    </div>`;
+                  }).join('')}
+                </div>
+              </div>`
+            : '';
+
+          const bestNowSummary = hasBestNow
+            ? `Best now: <strong class="text-teal-300">$${p.bestNow.toFixed(2)}</strong> (${p.bestNowStore})${p.bestUnitPrice ? ` &middot; <strong class="text-emerald-300">${p.bestUnitPrice}</strong>` : ''}`
+            : `Status: <strong class="text-amber-300">${p.anyWatchlistUnlogged ? 'Watchlist / No Price Yet' : 'Out of Stock'}</strong>`;
+
+          drawer.innerHTML = `
+            <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-300">
+              <span>Tracked at: <strong class="text-white">${p.stores.join(' &amp; ')}</strong> &middot; ${bestNowSummary}</span>
+              <span>Avg cycle: <strong class="text-white">${p.cycle > 0 ? '~' + p.cycle + ' days' : 'Static'}</strong></span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              ${storeDetailCards}
+            </div>
+            ${siblingsHtml}
+            <div class="relative h-64 sm:h-72 w-full">
+              <canvas class="inline-price-chart"></canvas>
+            </div>
+          `;
+          drawer.addEventListener('click', e => e.stopPropagation());
+          card.appendChild(drawer);
+          expandedCanvas = drawer.querySelector('canvas');
+          expandedProd = p;
+        }
+
+        const grpBtn = card.querySelector('.group-toggle-btn');
+        if (grpBtn) {
+          grpBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            const gName = grpBtn.dataset.group;
+            if (expandedGroups.has(gName)) expandedGroups.delete(gName);
+            else expandedGroups.add(gName);
+            renderAll();
+          });
+        }
+        const starBtn = card.querySelector('.fav-star-btn');
+        if (starBtn) {
+          starBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            const fk = favKeyFor(p);
+            if (favorites.has(fk)) favorites.delete(fk);
+            else favorites.add(fk);
+            saveFavorites();
+            renderAll();
+          });
+        }
+        card.addEventListener('click', () => {
+          selectedCanonical = (selectedCanonical === p.canonical) ? null : p.canonical;
           renderAll();
         });
-      }
-      const starBtn = card.querySelector('.fav-star-btn');
-      if (starBtn) {
-        starBtn.addEventListener('click', e => {
-          e.stopPropagation();
-          const fk = favKeyFor(p);
-          if (favorites.has(fk)) favorites.delete(fk);
-          else favorites.add(fk);
-          saveFavorites();
-          renderAll();
-        });
-      }
-      card.addEventListener('click', () => {
-        selectedCanonical = (selectedCanonical === p.canonical) ? null : p.canonical;
-        renderAll();
+        grid.appendChild(card);
       });
-      grid.appendChild(card);
-    });
 
-    if (expandedCanvas && expandedProd) {
-      renderChartInCanvas(expandedCanvas, expandedProd);
+      if (expandedCanvas && expandedProd) {
+        renderChartInCanvas(expandedCanvas, expandedProd);
+      }
+    } catch (e) {
+      showStatus('Unable to render tracker items cleanly.', true);
     }
   }
 
+  /**
+   * Parses History Log CSV text, skipping blank template rows while preserving Out of Stock entries.
+   */
   function parseCsv(text) {
     const lines = text.trim().split(/\r?\n/);
     if (lines.length < 2) return [];
@@ -852,22 +937,21 @@
       const store = idxStore >= 0 ? (cols[idxStore] || '').trim() : '';
       const dateVal = idxDate >= 0 ? (cols[idxDate] || '').trim() : '';
       if (!canon && !store) continue;
-      // Skip blank/unpopulated template rows that have no date and no price/status
-      if (!dateVal && !(idxPrice >= 0 && (cols[idxPrice] || '').trim()) && !(idxPromo >= 0 && (cols[idxPromo] || '').trim())) continue;
 
       const rawPriceStr = idxPrice >= 0 ? (cols[idxPrice] || '').trim() : '';
       const rawRrpStr = idxRrp >= 0 ? (cols[idxRrp] || '').trim() : '';
       const promoStr = idxPromo >= 0 ? (cols[idxPromo] || '').trim() : '';
+
+      // Skip blank template rows lacking date, price, and promo/stock status
+      if (!dateVal && !rawPriceStr && !promoStr) continue;
 
       const parsedPrice = parseFloat(rawPriceStr.replace(/[^0-9.]/g, ''));
       const parsedRrp = parseFloat(rawRrpStr.replace(/[^0-9.]/g, ''));
       const price = isValidPrice(parsedPrice) ? parsedPrice : null;
       const isOutOfStock = price === null || /out\s*of\s*stock/i.test(promoStr) || /out\s*of\s*stock/i.test(rawPriceStr);
 
-      if (price === null && !isOutOfStock && !canon) continue;
-
       parsed.push({
-        date: idxDate >= 0 ? (cols[idxDate] || '') : '',
+        date: dateVal,
         canonical: canon || 'Unknown',
         retailer: store || 'Store',
         price,
@@ -890,11 +974,14 @@
     const el = document.getElementById('statusBanner');
     el.textContent = msg;
     el.className = isError
-      ? 'rounded-xl px-4 py-2.5 text-sm font-medium bg-red-50 text-red-800 border border-red-200'
-      : 'rounded-xl px-4 py-2.5 text-sm font-medium bg-teal-50 text-teal-800 border border-teal-200';
+      ? 'rounded-xl px-4 py-2.5 text-sm font-medium bg-red-950/90 text-red-200 border border-red-800'
+      : 'rounded-xl px-4 py-2.5 text-sm font-medium bg-teal-950/90 text-teal-200 border border-teal-800';
     el.classList.remove('hidden');
   }
 
+  /**
+   * Fetches live History Log CSV and companion Tracked Links sheet from Google Sheets.
+   */
   async function loadSheetCsv(url) {
     try {
       const res = await fetch(url);
@@ -922,8 +1009,9 @@
     }
   }
 
-  // Event listeners
+  // Search, store tabs, favorites, watchlist, and sort listeners
   document.getElementById('searchInput').addEventListener('input', renderAll);
+
   const STORE_TAB_CLASSES = {
     ALL:  { on: 'bg-neutral-600 text-white shadow-sm', off: 'text-neutral-300 hover:text-white' },
     WW:   { on: 'bg-teal-600 text-white shadow-sm',    off: 'text-teal-300 bg-teal-950/50 hover:bg-teal-900/60' },
@@ -968,12 +1056,16 @@
     renderAll();
   });
 
+  // CSV Modal open/close/load controls
   const modal = document.getElementById('csvModal');
   document.getElementById('openCsvModalBtn').addEventListener('click', () => {
     modal.classList.remove('hidden');
     modal.classList.add('flex');
   });
-  const closeModal = () => { modal.classList.add('hidden'); modal.classList.remove('flex'); };
+  const closeModal = () => {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  };
   document.getElementById('closeCsvModalBtn').addEventListener('click', closeModal);
   document.getElementById('cancelCsvBtn').addEventListener('click', closeModal);
   document.getElementById('loadCsvBtn').addEventListener('click', () => {
@@ -997,6 +1089,7 @@
     loadSheetCsv(DEFAULT_SHEET_CSV);
   }
 
+  // Hide sticky header while scrolling down and bring it back when scrolling up
   let lastScrollY = window.scrollY;
   const topHeader = document.getElementById('topHeader');
   window.addEventListener('scroll', () => {
