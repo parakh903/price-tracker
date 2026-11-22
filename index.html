@@ -451,7 +451,7 @@
         ? 'px-2 py-1 text-xs font-semibold rounded-lg bg-teal-500 text-black shadow-sm transition'
         : 'px-2 py-1 text-xs font-medium rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 transition';
     }
-    const allAgg = aggregateProducts(allRows, 'ALL');
+    const allAgg = aggregateProducts(combinedRows, 'ALL');
     const q = document.getElementById('searchInput').value.trim().toLowerCase();
 
     const searchAll = allAgg.filter(p => !q || p.canonical.toLowerCase().includes(q));
@@ -474,7 +474,33 @@
       ? 'px-2 py-1 text-xs font-semibold rounded-lg bg-amber-500 text-black shadow-sm transition'
       : 'px-2 py-1 text-xs font-medium rounded-lg border border-amber-700/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/50 transition';
 
-    const scopedProducts = aggregateProducts(allRows, storeFilter);
+    const combinedRows = allRows.slice();
+    if (Array.isArray(trackedLinks) && trackedLinks.length > 0) {
+      const hasLogForKey = new Set(allRows.map(r => `${r.canonical}::${r.retailer}`));
+      const latestAnyDate = allRows.reduce((m, r) => (r.date && r.date > m ? r.date : m), '') || '2026-11-19';
+      trackedLinks.forEach(tl => {
+        const key = `${tl.canonical}::${tl.retailer}`;
+        if (!hasLogForKey.has(key)) {
+          combinedRows.push({
+            date: latestAnyDate,
+            canonical: tl.canonical,
+            retailer: tl.retailer || 'Store',
+            price: null,
+            rrp: 0,
+            imageUrl: tl.imageUrl || '',
+            unitPrice: '',
+            url: tl.url || '',
+            fullName: tl.canonical,
+            promo: 'Watchlist / No Price Yet',
+            group: tl.group || '',
+            favorite: !!tl.favorite,
+            outOfStock: true,
+            cycle: 0
+          });
+        }
+      });
+    }
+    const scopedProducts = aggregateProducts(combinedRows, storeFilter);
 
     const filtered = scopedProducts.filter(p => {
       if (q && !p.canonical.toLowerCase().includes(q)) return false;
