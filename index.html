@@ -824,7 +824,10 @@
       if (cols.length < 3) continue;
       const canon = idxCanon >= 0 ? (cols[idxCanon] || '').trim() : '';
       const store = idxStore >= 0 ? (cols[idxStore] || '').trim() : '';
+      const dateVal = idxDate >= 0 ? (cols[idxDate] || '').trim() : '';
       if (!canon && !store) continue;
+      // Skip blank/unpopulated template rows that have no date and no price/status
+      if (!dateVal && !(idxPrice >= 0 && (cols[idxPrice] || '').trim()) && !(idxPromo >= 0 && (cols[idxPromo] || '').trim())) continue;
 
       const rawPriceStr = idxPrice >= 0 ? (cols[idxPrice] || '').trim() : '';
       const rawRrpStr = idxRrp >= 0 ? (cols[idxRrp] || '').trim() : '';
