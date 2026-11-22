@@ -96,11 +96,16 @@
     ['Handee Ultra Double Length White Paper Towel 2 x 120 pack', 'Woolworths', 5.25, [5.25, 5.25], 0, 'https://assets.woolworths.com.au/images/1005/212842.jpg?impolicy=wowsmkqiema&w=360&h=360', '$2.19 / 100 sheets', 'Handee Paper Towel']
   ];
 
+  function isValidPrice(v) {
+    return typeof v === 'number' && Number.isFinite(v) && v > 0;
+  }
+
   function buildMockRecords() {
     const rows = [];
     RAW_SPECS.forEach(([name, store, rrp, prices, cycle, imageUrl, unitPrice, group]) => {
       DATES.forEach((d, idx) => {
-        rows.push({ date: d, canonical: name, retailer: store, price: prices[idx], rrp, cycle, imageUrl, unitPrice, group });
+        const pVal = isValidPrice(prices[idx]) ? prices[idx] : null;
+        rows.push({ date: d, canonical: name, retailer: store, price: pVal, rrp, cycle, imageUrl, unitPrice, group, outOfStock: pVal === null });
       });
     });
     return rows;
@@ -145,6 +150,7 @@
       }
       const p = byProd.get(r.canonical);
       if (r.group && !p.group) p.group = r.group;
+      if (!p.imageUrl && r.imageUrl) p.imageUrl = r.imageUrl;
       if (r.favorite) p.sheetFav = true;
       if (!p.retailers.has(r.retailer)) p.retailers.set(r.retailer, []);
       p.retailers.get(r.retailer).push(r);
@@ -154,17 +160,23 @@
     byProd.forEach(p => {
       const targetStore = storeScope === 'WW' ? 'Woolworths' : (storeScope === 'CW' ? 'Chemist Warehouse' : null);
       let bestNow = Infinity, bestNowStore = '', bestRrp = 0, bestUnitPrice = '', low6m = Infinity, lowStore = '', lowUnitPrice = '', lastLowDate = '', latestDate = '';
+      let fallbackStore = '', fallbackRrp = 0, fallbackUnitPrice = '', fallbackPromo = '';
       const storeLatest = [];
+
       p.retailers.forEach((arr, store) => {
         arr.sort((a, b) => a.date.localeCompare(b.date));
         const latest = arr[arr.length - 1];
+        const latestHasPrice = isValidPrice(latest.price);
+        const isOutOfStock = !latestHasPrice || !!latest.outOfStock || /out\s*of\s*stock/i.test(latest.promo || '');
+
         let storeLow = Infinity, storeLowUnit = '', storeUrl = latest.url || '', storeFullName = latest.fullName || p.canonical, storePromo = latest.promo || '';
         arr.forEach(item => {
-          if (item.price < storeLow) {
+          if (isValidPrice(item.price) && item.price < storeLow) {
             storeLow = item.price;
             storeLowUnit = item.unitPrice || '';
           }
           if (!storeUrl && item.url) storeUrl = item.url;
+          if (!storeFullName && item.fullName) storeFullName = item.fullName;
         });
         if (!storeUrl && typeof trackedLinks !== 'undefined' && Array.isArray(trackedLinks)) {
           const tlMatch = trackedLinks.find(t => t.canonical === p.canonical && t.retailer === store && t.url);
@@ -172,21 +184,35 @@
         }
         storeLatest.push({
           store,
-          price: latest.price,
-          rrp: latest.rrp,
-          low: storeLow,
+          price: latestHasPrice ? latest.price : null,
+          outOfStock: isOutOfStock,
+          rrp: isValidPrice(latest.rrp) ? latest.rrp : 0,
+          low: Number.isFinite(storeLow) ? storeLow : null,
           unitPrice: latest.unitPrice || '',
           lowUnitPrice: storeLowUnit,
           url: storeUrl,
           fullName: storeFullName,
           packSize: extractPackSize(storeFullName) || extractPackSize(p.canonical),
-          promo: storePromo
+          promo: storePromo || (isOutOfStock ? 'Out of Stock' : '')
         });
+
+        if (!fallbackStore) {
+          fallbackStore = store;
+          fallbackRrp = isValidPrice(latest.rrp) ? latest.rrp : 0;
+          fallbackUnitPrice = latest.unitPrice || '';
+          fallbackPromo = storePromo || (isOutOfStock ? 'Out of Stock' : '');
+        }
+
         if (targetStore && store !== targetStore) return;
         if (latest.date > latestDate) latestDate = latest.date;
-        if (latest.price < bestNow) { bestNow = latest.price; bestNowStore = store; bestRrp = latest.rrp; bestUnitPrice = latest.unitPrice || ''; }
+        if (latestHasPrice && latest.price < bestNow) {
+          bestNow = latest.price;
+          bestNowStore = store;
+          bestRrp = isValidPrice(latest.rrp) ? latest.rrp : 0;
+          bestUnitPrice = latest.unitPrice || '';
+        }
         arr.forEach(item => {
-          if (item.price < low6m || (item.price === low6m && item.date > lastLowDate)) {
+          if (isValidPrice(item.price) && (item.price < low6m || (item.price === low6m && item.date > lastLowDate))) {
             low6m = item.price;
             lowStore = store;
             lowUnitPrice = item.unitPrice || '';
@@ -194,17 +220,33 @@
           }
         });
       });
+
+      const hasAnyPrice = Number.isFinite(bestNow);
+      const hasAnyLow = Number.isFinite(low6m);
+      if (!hasAnyPrice) {
+        bestNow = null;
+        bestNowStore = fallbackStore;
+        bestRrp = fallbackRrp;
+        bestUnitPrice = fallbackUnitPrice;
+      }
+      if (!hasAnyLow) {
+        low6m = null;
+        lowStore = fallbackStore;
+      }
+
       const stores = Array.from(p.retailers.keys());
       const storeType = stores.length > 1 ? 'BOTH' : (stores[0] === 'Woolworths' ? 'WW' : 'CW');
-      const discPct = bestRrp > 0 ? Math.max(0, ((bestRrp - bestNow) / bestRrp) * 100) : 0;
-      const isBuy = bestNow <= low6m * 1.02 || discPct >= 30;
-      const signal = isBuy ? 'BUY NOW' : (p.cycle > 0 ? 'WAIT' : 'EVERYDAY');
+      const discPct = (hasAnyPrice && bestRrp > 0) ? Math.max(0, ((bestRrp - bestNow) / bestRrp) * 100) : 0;
+      const isAtLowest = hasAnyPrice && hasAnyLow && bestNow <= low6m + 0.01;
+      const isBuy = isAtLowest || discPct >= 30;
+      const signal = !hasAnyPrice ? 'OUT OF STOCK' : (isBuy ? 'BUY NOW' : (p.cycle > 0 ? 'WAIT' : 'EVERYDAY'));
 
-      // Compute predicted next lowest price and date
       let predNextLabel = '—';
-      if (p.cycle === 0) {
+      if (!hasAnyPrice) {
+        predNextLabel = 'Out of Stock';
+      } else if (p.cycle === 0) {
         predNextLabel = 'Gathering cycle data';
-      } else if (bestNow <= low6m * 1.01) {
+      } else if (hasAnyLow && bestNow <= low6m * 1.01) {
         predNextLabel = 'At Lowest Now';
       } else if (lastLowDate && latestDate) {
         const ref = new Date(latestDate + 'T00:00:00');
@@ -236,14 +278,15 @@
         predNextLabel,
         cycle: p.cycle,
         signal,
-        isBuy
+        isBuy,
+        isAtLowest
       });
     });
-    // Compute group-level sort keys so grouped products always stay together
+
     const groupStats = new Map();
     list.forEach(item => {
       const gKey = item.group || item.canonical;
-      const isLow = item.bestNow <= item.low6m + 0.01 ? 1 : 0;
+      const isLow = item.isAtLowest ? 1 : 0;
       if (!groupStats.has(gKey)) {
         groupStats.set(gKey, { maxDisc: item.discPct, maxLow: isLow, hasFav: !!item.sheetFav, name: gKey });
       } else {
@@ -268,7 +311,6 @@
         if (gb.maxDisc !== ga.maxDisc) return gb.maxDisc - ga.maxDisc;
         return gaKey.localeCompare(gbKey);
       }
-      // Inside the same group, put cheapest unit price first, then highest discount %
       const parseUnit = u => {
         const m = String(u || '').match(/([0-9]+(?:\.[0-9]+)?)/);
         return m ? parseFloat(m[1]) : Infinity;
@@ -299,11 +341,15 @@
       const c = colors[store] || { line: '#475569', bg: 'rgba(71, 85, 105, 0.08)' };
       datasets.push({
         label: `${store} Price`,
-        data: labels.map(d => byDate.has(d) ? byDate.get(d).price : null),
+        data: labels.map(d => {
+          const rec = byDate.get(d);
+          return rec && isValidPrice(rec.price) ? rec.price : null;
+        }),
         borderColor: c.line,
         backgroundColor: c.bg,
         borderWidth: 2.5,
         stepped: true,
+        spanGaps: false,
         tension: 0,
         pointRadius: 4,
         pointHoverRadius: 6
@@ -311,7 +357,10 @@
       if (!rrpSeriesAdded) {
         datasets.push({
           label: 'Regular RRP',
-          data: labels.map(d => byDate.has(d) ? byDate.get(d).rrp : null),
+          data: labels.map(d => {
+            const rec = byDate.get(d);
+            return rec && isValidPrice(rec.rrp) ? rec.rrp : null;
+          }),
           borderColor: '#737373',
           borderWidth: 1.5,
           borderDash: [6, 4],
@@ -335,7 +384,9 @@
           legend: { position: 'top', labels: { color: '#d4d4d4', boxWidth: 14, usePointStyle: true } },
           tooltip: {
             callbacks: {
-              label: c => `${c.dataset.label}: $${Number(c.parsed.y).toFixed(2)}`
+              label: c => c.parsed.y === null || c.parsed.y === undefined
+                ? `${c.dataset.label}: Out of Stock`
+                : `${c.dataset.label}: $${Number(c.parsed.y).toFixed(2)}`
             }
           }
         },
@@ -441,7 +492,7 @@
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
 
     if (watchlistMode) {
-      const loggedKeys = new Set(allRows.map(r => `${r.canonical}::${r.retailer}`));
+      const loggedKeys = new Set(allRows.filter(r => isValidPrice(r.price)).map(r => `${r.canonical}::${r.retailer}`));
       const wlItems = trackedLinks.filter(item => {
         if (q && !item.canonical.toLowerCase().includes(q) && !item.group.toLowerCase().includes(q)) return false;
         if (storeFilter === 'WW') return item.retailer === 'Woolworths';
@@ -498,7 +549,6 @@
     let expandedCanvas = null;
     let expandedProd = null;
 
-    // Count items per group in filtered list
     const groupCounts = new Map();
     const groupSeen = new Map();
     filtered.forEach(p => {
@@ -522,17 +572,20 @@
       }
     });
 
-    visibleItems.forEach(({ p, isGroupTop, extraCount, isExpanded, isGroupChild }, idx) => {
+    visibleItems.forEach(({ p, isGroupTop, extraCount, isExpanded, isGroupChild }) => {
       const card = document.createElement('div');
       const active = p.canonical === selectedCanonical;
-      const isAtLowest = p.bestNow <= p.low6m + 0.01;
+      const isAtLowest = !!p.isAtLowest;
+      const hasBestNow = isValidPrice(p.bestNow);
+      const hasLow6m = isValidPrice(p.low6m);
 
-      // High-contrast color-coding: Amber for 25%+ real deals, subtle grey for 1-24%
       const baseBg = 'bg-neutral-950';
       let tierCard = `${baseBg} border-neutral-800 hover:border-neutral-600`;
       let discPill = '<span class="text-xs text-neutral-400">0% off</span>';
 
-      if (p.discPct >= 25) {
+      if (!hasBestNow) {
+        discPill = '<span class="px-2 py-0.5 text-xs font-medium rounded bg-neutral-800/90 text-amber-300 border border-amber-700/50">Out of Stock</span>';
+      } else if (p.discPct >= 25) {
         tierCard = `${baseBg} border-amber-500/80 hover:border-amber-400`;
         discPill = `<span class="px-2 py-0.5 text-xs font-bold rounded bg-amber-500/25 text-amber-200 border border-amber-500/40">${p.discPct.toFixed(0)}% off</span>`;
       } else if (p.discPct > 0) {
@@ -546,24 +599,41 @@
         ? `col-span-full cursor-pointer rounded-xl border-2 border-teal-400 ${lowestAccent} bg-neutral-900 p-4 transition shadow-lg flex flex-col gap-3`
         : `cursor-pointer rounded-xl border ${tierCard} ${lowestAccent} p-3.5 transition flex flex-col justify-between gap-2.5`;
 
-      const storeBadge = p.storeType === 'BOTH'
-        ? '<span class="px-2 py-0.5 text-[11px] font-medium rounded bg-blue-950 text-blue-300 border border-blue-800">Both</span>'
-        : (p.storeType === 'WW'
-          ? '<span class="px-2 py-0.5 text-[11px] font-medium rounded bg-teal-950 text-teal-300 border border-teal-800">WW</span>'
-          : '<span class="px-2 py-0.5 text-[11px] font-medium rounded bg-indigo-950 text-indigo-300 border border-indigo-800">CW</span>');
-
-      const discText = discPill;
-      const chevron = active
-        ? '<span class="text-xs font-medium text-teal-400 ml-1">&#9650; Hide</span>'
-        : '<span class="text-xs text-neutral-500 ml-1">&#9660;</span>';
       const initials = p.canonical.split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
       const thumbHtml = p.imageUrl
         ? `<img src="${p.imageUrl}" alt="${p.canonical}" class="w-20 h-20 sm:w-28 sm:h-28 rounded-xl object-contain bg-white p-1 border border-neutral-700" />`
         : `<div class="w-20 h-20 sm:w-28 sm:h-28 rounded-xl bg-neutral-800 border border-neutral-700 text-neutral-300 text-lg font-bold flex items-center justify-center">${initials}</div>`;
       const bestStoreObj = p.storeLatest.find(x => x.store === p.bestNowStore) || {};
       const bestPackTag = bestStoreObj.packSize ? ` &middot; ${bestStoreObj.packSize}` : '';
+      const bestStoreCls = p.bestNowStore === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300';
+      const bestStoreShort = p.bestNowStore === 'Woolworths' ? 'WW' : 'CW';
+      const lowStoreCls = p.lowStore === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300';
+      const lowStoreShort = p.lowStore === 'Woolworths' ? 'WW' : 'CW';
 
       const starBtnHtml = `<button type="button" class="fav-star-btn inline-block mr-1 align-baseline text-sm leading-none ${isFav(p) ? 'text-amber-400' : 'text-neutral-500 hover:text-amber-300'}" title="${p.group ? 'Favorite group: ' + p.group : 'Favorite product'}">${isFav(p) ? '★' : '☆'}</button>`;
+
+      const nowPriceHtml = hasBestNow
+        ? `<div class="text-sm font-bold whitespace-nowrap ${isAtLowest ? 'text-emerald-300' : 'text-white'}">$${p.bestNow.toFixed(2)} ${p.bestRrp > p.bestNow ? `<span class="text-[11px] font-normal text-neutral-400 line-through">$${p.bestRrp.toFixed(2)}</span>` : ''}</div>`
+        : `<div class="text-xs font-semibold whitespace-nowrap text-amber-300">Out of Stock</div>`;
+
+      const lowPriceHtml = hasLow6m
+        ? `<div class="text-sm font-semibold text-emerald-300">$${p.low6m.toFixed(2)}</div>`
+        : `<div class="text-xs font-medium text-neutral-400">—</div>`;
+
+      const otherStoreHtml = (() => {
+        const other = p.storeLatest.find(x => x.store !== p.bestNowStore);
+        if (!other) return '';
+        const sc = other.store === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300';
+        const sn = other.store === 'Woolworths' ? 'WW' : 'CW';
+        const pt = other.packSize ? ` &middot; ${other.packSize}` : '';
+        const otherNowVal = isValidPrice(other.price)
+          ? `<div class="font-bold whitespace-nowrap text-white">$${other.price.toFixed(2)}</div>`
+          : `<div class="text-xs font-semibold whitespace-nowrap text-amber-300">Out of Stock</div>`;
+        const otherLowVal = isValidPrice(other.low)
+          ? `<div class="font-semibold whitespace-nowrap text-emerald-300">$${other.low.toFixed(2)}</div>`
+          : `<div class="text-xs font-medium whitespace-nowrap text-neutral-400">—</div>`;
+        return `<div class="grid grid-cols-2 gap-2 pt-1.5 border-t border-neutral-800/80 text-[11px]"><div><div class="text-[10px] text-neutral-400">Now <span class="${sc} font-semibold">(${sn}${pt})</span></div>${otherNowVal}${other.unitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${other.unitPrice}</div>` : ''}</div><div class="text-right"><div class="text-[10px] text-neutral-400">Lowest <span class="${sc} font-semibold">(${sn})</span></div>${otherLowVal}${other.lowUnitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${other.lowUnitPrice}</div>` : ''}</div></div>`;
+      })();
 
       card.innerHTML = `
         <div class="flex items-stretch gap-2.5 sm:gap-3">
@@ -574,25 +644,25 @@
           <div class="flex-1 min-w-0 flex flex-col justify-between gap-2">
             <div class="grid grid-cols-2 gap-2">
               <div>
-                <div class="text-[10px] text-neutral-400">Now <span class="${p.bestNowStore === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300'} font-semibold">(${p.bestNowStore === 'Woolworths' ? 'WW' : 'CW'}${bestPackTag})</span></div>
-                <div class="text-sm font-bold whitespace-nowrap ${isAtLowest ? 'text-emerald-300' : 'text-white'}">$${p.bestNow.toFixed(2)} ${p.bestRrp > p.bestNow ? `<span class="text-[11px] font-normal text-neutral-400 line-through">$${p.bestRrp.toFixed(2)}</span>` : ''}</div>
+                <div class="text-[10px] text-neutral-400">Now <span class="${bestStoreCls} font-semibold">(${bestStoreShort}${bestPackTag})</span></div>
+                ${nowPriceHtml}
                 ${p.bestUnitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${p.bestUnitPrice}</div>` : ''}
               </div>
               <div class="text-right">
-                <div class="text-[10px] text-neutral-400">Lowest <span class="${p.lowStore === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300'} font-semibold">(${p.lowStore === 'Woolworths' ? 'WW' : 'CW'})</span></div>
-                <div class="text-sm font-semibold text-emerald-300">$${p.low6m.toFixed(2)}</div>
+                <div class="text-[10px] text-neutral-400">Lowest <span class="${lowStoreCls} font-semibold">(${lowStoreShort})</span></div>
+                ${lowPriceHtml}
                 ${p.lowUnitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${p.lowUnitPrice}</div>` : ''}
               </div>
             </div>
             <div class="flex items-center justify-between gap-2 pt-1.5 border-t border-neutral-800">
-              <div>${discText}</div>
+              <div>${discPill}</div>
               <div class="text-right">
                 <div class="text-[10px] text-neutral-400">Next low</div>
                 <div class="text-[11px] font-medium text-neutral-200">${p.predNextLabel === 'At Lowest Now' ? '<span class="inline-block px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 font-semibold">At Lowest Now</span>' : p.predNextLabel}</div>
               </div>
             </div>
             ${p.group ? `<div class="flex items-center justify-between gap-2 text-[10px] pt-1 border-t border-neutral-800/80 text-purple-300"><span class="truncate">${isGroupChild ? '↳ ' : ''}${p.group}</span>${isGroupTop ? `<button type="button" class="group-toggle-btn shrink-0 px-2 py-0.5 rounded bg-purple-950/80 border border-purple-700/70 text-purple-200 hover:bg-purple-900 font-semibold" data-group="${p.group.replace(/"/g, '&quot;')}">${isExpanded ? 'Hide ' + extraCount + ' &#9650;' : '+' + extraCount + ' more &#9660;'}</button>` : ''}</div>` : ''}
-            ${(() => { const other = p.storeLatest.find(x => x.store !== p.bestNowStore); if (!other) return ''; const sc = other.store === 'Woolworths' ? 'text-teal-300' : 'text-indigo-300'; const sn = other.store === 'Woolworths' ? 'WW' : 'CW'; const pt = other.packSize ? ` &middot; ${other.packSize}` : ''; return `<div class="grid grid-cols-2 gap-2 pt-1.5 border-t border-neutral-800/80 text-[11px]"><div><div class="text-[10px] text-neutral-400">Now <span class="${sc} font-semibold">(${sn}${pt})</span></div><div class="font-bold whitespace-nowrap text-white">$${other.price.toFixed(2)}</div>${other.unitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${other.unitPrice}</div>` : ''}</div><div class="text-right"><div class="text-[10px] text-neutral-400">Lowest <span class="${sc} font-semibold">(${sn})</span></div><div class="font-semibold whitespace-nowrap text-emerald-300">$${other.low.toFixed(2)}</div>${other.lowUnitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${other.lowUnitPrice}</div>` : ''}</div></div>`; })()}
+            ${otherStoreHtml}
           </div>
         </div>
       `;
@@ -608,6 +678,14 @@
           const linkHtml = s.url
             ? `<a href="${s.url}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-teal-300 text-[11px] font-semibold border border-neutral-700 transition">Open ${isWW ? 'Woolworths' : 'Chemist Warehouse'} &rarr;</a>`
             : '';
+          const sHasPrice = isValidPrice(s.price);
+          const sHasLow = isValidPrice(s.low);
+          const sNowText = sHasPrice
+            ? `Now <strong class="text-white">$${s.price.toFixed(2)}</strong>${s.rrp > s.price ? `<span class="line-through text-neutral-500 ml-1">$${s.rrp.toFixed(2)}</span>` : ''}`
+            : `Now <strong class="text-amber-300">Out of Stock</strong>`;
+          const sLowText = sHasLow
+            ? `Low <strong class="text-emerald-300">$${s.low.toFixed(2)}</strong>`
+            : `Low <strong class="text-neutral-400">—</strong>`;
           return `
             <div class="rounded-lg border border-neutral-800 bg-neutral-950/80 p-2.5 flex flex-col justify-between gap-2">
               <div class="space-y-1">
@@ -619,11 +697,10 @@
               </div>
               <div class="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-neutral-800/80 text-[11px]">
                 <div class="text-neutral-300">
-                  Now <strong class="text-white">$${s.price.toFixed(2)}</strong>
-                  ${s.rrp > s.price ? `<span class="line-through text-neutral-500 ml-1">$${s.rrp.toFixed(2)}</span>` : ''}
+                  ${sNowText}
                   ${s.unitPrice ? `<span class="text-teal-300 font-semibold ml-1.5">(${s.unitPrice})</span>` : ''}
                   <span class="text-neutral-500 mx-1">&middot;</span>
-                  Low <strong class="text-emerald-300">$${s.low.toFixed(2)}</strong>
+                  ${sLowText}
                 </div>
                 ${linkHtml}
               </div>
@@ -640,10 +717,13 @@
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                 ${groupSiblings.map(sib => {
                   const sibUrl = (sib.storeLatest.find(x => x.store === sib.bestNowStore) || sib.storeLatest[0] || {}).url || '';
+                  const sibPriceDisplay = isValidPrice(sib.bestNow)
+                    ? `<strong class="text-white">$${sib.bestNow.toFixed(2)}</strong>`
+                    : `<strong class="text-amber-300">Out of Stock</strong>`;
                   return `<div class="flex items-center justify-between gap-2 text-[11px] bg-neutral-950/70 border border-neutral-800 rounded px-2 py-1">
                     <span class="text-neutral-200 truncate" title="${sib.canonical}">${sib.canonical}</span>
                     <span class="shrink-0 text-right">
-                      <strong class="text-white">$${sib.bestNow.toFixed(2)}</strong>
+                      ${sibPriceDisplay}
                       ${sib.bestUnitPrice ? `<span class="text-teal-300 ml-1">(${sib.bestUnitPrice})</span>` : ''}
                       ${sibUrl ? `<a href="${sibUrl}" target="_blank" rel="noopener noreferrer" class="text-teal-400 hover:underline ml-1.5">&nearr;</a>` : ''}
                     </span>
@@ -653,9 +733,13 @@
             </div>`
           : '';
 
+        const bestNowSummary = hasBestNow
+          ? `Best now: <strong class="text-teal-300">$${p.bestNow.toFixed(2)}</strong> (${p.bestNowStore})${p.bestUnitPrice ? ` &middot; <strong class="text-emerald-300">${p.bestUnitPrice}</strong>` : ''}`
+          : `Status: <strong class="text-amber-300">Out of Stock</strong>`;
+
         drawer.innerHTML = `
           <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-300">
-            <span>Tracked at: <strong class="text-white">${p.stores.join(' &amp; ')}</strong> &middot; Best now: <strong class="text-teal-300">$${p.bestNow.toFixed(2)}</strong> (${p.bestNowStore})${p.bestUnitPrice ? ` &middot; <strong class="text-emerald-300">${p.bestUnitPrice}</strong>` : ''}</span>
+            <span>Tracked at: <strong class="text-white">${p.stores.join(' &amp; ')}</strong> &middot; ${bestNowSummary}</span>
             <span>Avg cycle: <strong class="text-white">${p.cycle > 0 ? '~' + p.cycle + ' days' : 'Static'}</strong></span>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -730,30 +814,43 @@
     const idxUnit = headers.findIndex(h => h.includes('unit price'));
     const idxUrl = headers.findIndex(h => h.includes('source url') || (h.includes('url') && !h.includes('image')));
     const idxFullName = headers.findIndex(h => h.includes('product name & size') || h.includes('name & size'));
-    const idxPromo = headers.findIndex(h => h.includes('promo'));
+    const idxPromo = headers.findIndex(h => h.includes('promo') || h.includes('stock') || h.includes('status'));
     const idxGroup = headers.findIndex(h => h.includes('group'));
     const idxFav = headers.findIndex(h => h.includes('fav'));
 
     const parsed = [];
     for (let i = 1; i < lines.length; i++) {
       const cols = parseLine(lines[i]);
-      if (cols.length < 5) continue;
-      const price = parseFloat((cols[idxPrice] || '').replace(/[^0-9.]/g, ''));
-      const rrp = parseFloat((cols[idxRrp] || '').replace(/[^0-9.]/g, ''));
-      if (isNaN(price)) continue;
+      if (cols.length < 3) continue;
+      const canon = idxCanon >= 0 ? (cols[idxCanon] || '').trim() : '';
+      const store = idxStore >= 0 ? (cols[idxStore] || '').trim() : '';
+      if (!canon && !store) continue;
+
+      const rawPriceStr = idxPrice >= 0 ? (cols[idxPrice] || '').trim() : '';
+      const rawRrpStr = idxRrp >= 0 ? (cols[idxRrp] || '').trim() : '';
+      const promoStr = idxPromo >= 0 ? (cols[idxPromo] || '').trim() : '';
+
+      const parsedPrice = parseFloat(rawPriceStr.replace(/[^0-9.]/g, ''));
+      const parsedRrp = parseFloat(rawRrpStr.replace(/[^0-9.]/g, ''));
+      const price = isValidPrice(parsedPrice) ? parsedPrice : null;
+      const isOutOfStock = price === null || /out\s*of\s*stock/i.test(promoStr) || /out\s*of\s*stock/i.test(rawPriceStr);
+
+      if (price === null && !isOutOfStock && !canon) continue;
+
       parsed.push({
-        date: cols[idxDate] || '',
-        canonical: cols[idxCanon] || 'Unknown',
-        retailer: cols[idxStore] || 'Store',
+        date: idxDate >= 0 ? (cols[idxDate] || '') : '',
+        canonical: canon || 'Unknown',
+        retailer: store || 'Store',
         price,
-        rrp: isNaN(rrp) ? price : rrp,
+        rrp: isValidPrice(parsedRrp) ? parsedRrp : (price !== null ? price : 0),
         imageUrl: idxImg >= 0 ? (cols[idxImg] || '') : '',
         unitPrice: idxUnit >= 0 ? (cols[idxUnit] || '') : '',
         url: idxUrl >= 0 ? (cols[idxUrl] || '') : '',
         fullName: idxFullName >= 0 ? (cols[idxFullName] || '') : '',
-        promo: idxPromo >= 0 ? (cols[idxPromo] || '') : '',
+        promo: promoStr || (isOutOfStock ? 'Out of Stock' : ''),
         group: idxGroup >= 0 ? (cols[idxGroup] || '') : '',
         favorite: idxFav >= 0 ? /^(true|yes|1|y|★)$/i.test((cols[idxFav] || '').trim()) : false,
+        outOfStock: isOutOfStock,
         cycle: 28
       });
     }
