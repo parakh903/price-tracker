@@ -44,6 +44,9 @@
           <button id="favFilterBtn" type="button" class="px-2 py-1 text-xs font-medium rounded-lg border border-amber-700/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/50 transition">
             ★ <span class="ml-0.5 px-1.5 py-0.2 rounded-full bg-black/30 text-[10px]">0</span>
           </button>
+          <button id="changes7dBtn" type="button" class="px-2 py-1 text-xs font-medium rounded-lg border border-cyan-700/60 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50 transition">
+            7d Changes <span class="ml-0.5 px-1.5 py-0.2 rounded-full bg-black/30 text-[10px]">0</span>
+          </button>
           <button id="watchlistBtn" type="button" class="px-2 py-1 text-xs font-medium rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 transition">
             Watchlist
           </button>
@@ -102,16 +105,18 @@
     ['Handee Ultra Double Length White Paper Towel 2 x 120 pack', 'Woolworths', 5.25, [5.25, 5.25], 0, 'https://assets.woolworths.com.au/images/1005/212842.jpg?impolicy=wowsmkqiema&w=360&h=360', '$2.19 / 100 sheets', 'Handee Paper Towel']
   ];
 
-  /**
-   * Validates whether a value is a positive finite price number.
-   */
   function isValidPrice(v) {
     return typeof v === 'number' && Number.isFinite(v) && v > 0;
   }
 
-  /**
-   * Generates fallback mock rows from RAW_SPECS across DATES.
-   */
+  function parseDateMs(dStr) {
+    if (!dStr) return NaN;
+    const m = String(dStr).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const parsed = Date.parse(dStr);
+    return Number.isFinite(parsed) ? parsed : NaN;
+  }
+
   function buildMockRecords() {
     const rows = [];
     try {
@@ -132,9 +137,7 @@
           });
         });
       });
-    } catch (e) {
-      // Fallback safely if mock generation fails
-    }
+    } catch (e) {}
     return rows;
   }
 
@@ -144,6 +147,7 @@
   let sortMode = 'discount';
   let chartInstance = null;
   let favOnly = false;
+  let changes7dOnly = false;
   let watchlistMode = false;
   let trackedLinks = [];
   const expandedGroups = new Set();
@@ -176,11 +180,58 @@
   }
 
   /**
-   * Aggregates product history and watchlist rows by canonical product name within storeScope.
+   * Computes whether a product experienced a price change within the last 7 days
+   * relative to the latest logged snapshot date.
    */
+  function compute7dChange(p, targetStore, anchorMs) {
+    if (!Number.isFinite(anchorMs)) return null;
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const cutoffMs = anchorMs - sevenDaysMs;
+    let bestChange = null;
+
+    p.retailers.forEach((arr, store) => {
+      if (targetStore && store !== targetStore) return;
+      const validPoints = arr
+        .filter(r => isValidPrice(r.price) && Number.isFinite(parseDateMs(r.date)))
+        .sort((a, b) => parseDateMs(a.date) - parseDateMs(b.date));
+
+      if (validPoints.length < 2) return;
+      const latestPt = validPoints[validPoints.length - 1];
+      const latestMs = parseDateMs(latestPt.date);
+      if (latestMs < cutoffMs) return;
+
+      for (let i = validPoints.length - 2; i >= 0; i--) {
+        const prevPt = validPoints[i];
+        const prevMs = parseDateMs(prevPt.date);
+        if (prevMs < cutoffMs) break;
+        if (Math.abs(latestPt.price - prevPt.price) >= 0.005) {
+          const delta = latestPt.price - prevPt.price;
+          const pct = (delta / prevPt.price) * 100;
+          const candidate = {
+            store,
+            prevPrice: prevPt.price,
+            currPrice: latestPt.price,
+            delta,
+            pct,
+            dateChanged: latestPt.date
+          };
+          if (!bestChange || Math.abs(candidate.delta) > Math.abs(bestChange.delta)) {
+            bestChange = candidate;
+          }
+          break;
+        }
+      }
+    });
+
+    return bestChange;
+  }
+
   function aggregateProducts(rows, storeScope) {
     const byProd = new Map();
+    let maxRowMs = -Infinity;
     rows.forEach(r => {
+      const dMs = parseDateMs(r.date);
+      if (Number.isFinite(dMs) && dMs > maxRowMs) maxRowMs = dMs;
       if (!byProd.has(r.canonical)) {
         byProd.set(r.canonical, {
           canonical: r.canonical,
@@ -314,6 +365,8 @@
         predNextLabel = `$${low6m.toFixed(2)} (~${fmt})`;
       }
 
+      const change7d = compute7dChange(p, targetStore, maxRowMs);
+
       list.push({
         canonical: p.canonical,
         imageUrl: p.imageUrl || '',
@@ -336,7 +389,8 @@
         signal,
         isBuy,
         isAtLowest,
-        anyWatchlistUnlogged
+        anyWatchlistUnlogged,
+        change7d
       });
     });
 
@@ -380,9 +434,6 @@
     return list;
   }
 
-  /**
-   * Renders a stepped price history chart with an RRP reference line in the expanded card drawer.
-   */
   function renderChartInCanvas(canvasEl, product) {
     if (!canvasEl || !product || typeof Chart === 'undefined') return;
     try {
@@ -466,9 +517,6 @@
     } catch (e) {}
   }
 
-  /**
-   * Parses CSV data from the Tracked Links tab into active link entries.
-   */
   function parseTrackedLinksCsv(text) {
     const lines = text.trim().split(/\r?\n/);
     if (lines.length < 2) return [];
@@ -510,9 +558,6 @@
     return out;
   }
 
-  /**
-   * Renders all header counters, Watchlist links view, or product cards with inline drawers.
-   */
   function renderAll() {
     try {
       const wlBtn = document.getElementById('watchlistBtn');
@@ -523,7 +568,6 @@
           : 'px-2 py-1 text-xs font-medium rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 transition';
       }
 
-      // Build combinedRows before allAgg and scopedProducts so unlogged watchlist items appear under All
       const combinedRows = allRows.slice();
       if (Array.isArray(trackedLinks) && trackedLinks.length > 0) {
         const hasLogForKey = new Set(allRows.map(r => `${r.canonical}::${r.retailer}`));
@@ -575,11 +619,21 @@
         ? 'px-2 py-1 text-xs font-semibold rounded-lg bg-amber-500 text-black shadow-sm transition'
         : 'px-2 py-1 text-xs font-medium rounded-lg border border-amber-700/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/50 transition';
 
+      const changes7dCount = searchAll.filter(p => !!p.change7d).length;
+      const changesBtn = document.getElementById('changes7dBtn');
+      if (changesBtn) {
+        changesBtn.innerHTML = `7d Changes <span class="ml-0.5 px-1.5 py-0.2 rounded-full bg-black/30 text-[10px]">${changes7dCount}</span>`;
+        changesBtn.className = changes7dOnly
+          ? 'px-2 py-1 text-xs font-semibold rounded-lg bg-cyan-400 text-black shadow-sm transition'
+          : 'px-2 py-1 text-xs font-medium rounded-lg border border-cyan-700/60 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50 transition';
+      }
+
       const scopedProducts = aggregateProducts(combinedRows, storeFilter);
 
       const filtered = scopedProducts.filter(p => {
         if (q && !p.canonical.toLowerCase().includes(q)) return false;
         if (favOnly && !isFav(p)) return false;
+        if (changes7dOnly && !p.change7d) return false;
         if (storeFilter === 'WW') return p.retailers.has('Woolworths');
         if (storeFilter === 'CW') return p.retailers.has('Chemist Warehouse');
         if (storeFilter === 'BOTH') return p.storeType === 'BOTH';
@@ -646,7 +700,7 @@
       }
 
       if (filtered.length === 0) {
-        grid.innerHTML = '<div class="col-span-full py-8 text-center text-sm text-neutral-400">No products match your filter.</div>';
+        grid.innerHTML = `<div class="col-span-full py-8 text-center text-sm text-neutral-400">${changes7dOnly ? 'No price changes in the last 7 days.' : 'No products match your filter.'}</div>`;
         return;
       }
 
@@ -668,7 +722,7 @@
         const seen = groupSeen.get(p.group) || 0;
         groupSeen.set(p.group, seen + 1);
         const totalInGroup = groupCounts.get(p.group) || 1;
-        const isExpanded = !!q || expandedGroups.has(p.group);
+        const isExpanded = !!q || changes7dOnly || expandedGroups.has(p.group);
         if (seen === 0) {
           visibleItems.push({ p, isGroupTop: totalInGroup > 1, extraCount: totalInGroup - 1, isExpanded, isGroupChild: false });
         } else if (isExpanded) {
@@ -725,6 +779,21 @@
           ? `<div class="text-sm font-semibold text-emerald-300">$${p.low6m.toFixed(2)}</div>`
           : `<div class="text-xs font-medium text-neutral-400">—</div>`;
 
+        const change7dHtml = p.change7d
+          ? (() => {
+              const isDrop = p.change7d.delta < 0;
+              const absDelta = Math.abs(p.change7d.delta).toFixed(2);
+              const absPct = Math.abs(p.change7d.pct).toFixed(1);
+              const badgeCls = isDrop
+                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
+                : 'bg-rose-950/80 text-rose-300 border-rose-700/60';
+              return `<div class="text-[10px] px-2 py-1 rounded border ${badgeCls} flex items-center justify-between gap-1">
+                <span>7d ${isDrop ? 'Drop' : 'Rise'}: <strong>${isDrop ? '-' : '+'}$${absDelta}</strong> (${isDrop ? '-' : '+'}${absPct}%)</span>
+                <span class="opacity-80">$${p.change7d.prevPrice.toFixed(2)} &rarr; $${p.change7d.currPrice.toFixed(2)}</span>
+              </div>`;
+            })()
+          : '';
+
         const otherStoreHtml = (() => {
           const other = p.storeLatest.find(x => x.store !== p.bestNowStore);
           if (!other) return '';
@@ -759,6 +828,7 @@
                   ${p.lowUnitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${p.lowUnitPrice}</div>` : ''}
                 </div>
               </div>
+              ${change7dHtml}
               <div class="flex items-center justify-between gap-2 pt-1.5 border-t border-neutral-800">
                 <div>${discPill}</div>
                 <div class="text-right">
@@ -897,9 +967,6 @@
     }
   }
 
-  /**
-   * Parses History Log CSV text, skipping blank template rows while preserving Out of Stock entries.
-   */
   function parseCsv(text) {
     const lines = text.trim().split(/\r?\n/);
     if (lines.length < 2) return [];
@@ -942,7 +1009,6 @@
       const rawRrpStr = idxRrp >= 0 ? (cols[idxRrp] || '').trim() : '';
       const promoStr = idxPromo >= 0 ? (cols[idxPromo] || '').trim() : '';
 
-      // Skip blank template rows lacking date, price, and promo/stock status
       if (!dateVal && !rawPriceStr && !promoStr) continue;
 
       const parsedPrice = parseFloat(rawPriceStr.replace(/[^0-9.]/g, ''));
@@ -979,9 +1045,6 @@
     el.classList.remove('hidden');
   }
 
-  /**
-   * Fetches live History Log CSV and companion Tracked Links sheet from Google Sheets.
-   */
   async function loadSheetCsv(url) {
     try {
       const res = await fetch(url);
@@ -1009,7 +1072,6 @@
     }
   }
 
-  // Search, store tabs, favorites, watchlist, and sort listeners
   document.getElementById('searchInput').addEventListener('input', renderAll);
 
   const STORE_TAB_CLASSES = {
@@ -1038,11 +1100,18 @@
 
   document.getElementById('watchlistBtn').addEventListener('click', () => {
     watchlistMode = !watchlistMode;
+    if (watchlistMode) changes7dOnly = false;
     renderAll();
   });
 
   document.getElementById('favFilterBtn').addEventListener('click', () => {
     favOnly = !favOnly;
+    renderAll();
+  });
+
+  document.getElementById('changes7dBtn').addEventListener('click', () => {
+    changes7dOnly = !changes7dOnly;
+    if (changes7dOnly) watchlistMode = false;
     renderAll();
   });
 
@@ -1056,7 +1125,6 @@
     renderAll();
   });
 
-  // CSV Modal open/close/load controls
   const modal = document.getElementById('csvModal');
   document.getElementById('openCsvModalBtn').addEventListener('click', () => {
     modal.classList.remove('hidden');
@@ -1089,7 +1157,6 @@
     loadSheetCsv(DEFAULT_SHEET_CSV);
   }
 
-  // Hide sticky header while scrolling down and bring it back when scrolling up
   let lastScrollY = window.scrollY;
   const topHeader = document.getElementById('topHeader');
   window.addEventListener('scroll', () => {
