@@ -105,6 +105,9 @@
     ['Handee Ultra Double Length White Paper Towel 2 x 120 pack', 'Woolworths', 5.25, [5.25, 5.25], 0, 'https://assets.woolworths.com.au/images/1005/212842.jpg?impolicy=wowsmkqiema&w=360&h=360', '$2.19 / 100 sheets', 'Handee Paper Towel']
   ];
 
+  /**
+   * Validates whether a value is a positive finite price number.
+   */
   function isValidPrice(v) {
     return typeof v === 'number' && Number.isFinite(v) && v > 0;
   }
@@ -117,6 +120,25 @@
     return Number.isFinite(parsed) ? parsed : NaN;
   }
 
+  /**
+   * Parses a unit price string (e.g., "$0.09 / tablet", "$2.00 / 100 sheets") into numeric value and normalized unit suffix.
+   */
+  function parseUnitInfo(uStr) {
+    if (!uStr) return null;
+    const s = String(uStr).trim();
+    const m = s.match(/\$?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:\/|per)\s*(.+)$/i);
+    if (!m) {
+      const numOnly = s.match(/([0-9]+(?:\.[0-9]+)?)/);
+      return numOnly ? { val: parseFloat(numOnly[1]), unit: '', raw: s } : null;
+    }
+    const val = parseFloat(m[1]);
+    const unit = m[2].toLowerCase().replace(/\s+/g, ' ').replace(/tablets?\b/, 'tablet').replace(/tabs?\b/, 'tablet').replace(/capsules?\b/, 'capsule').replace(/caps?\b/, 'capsule').replace(/strips?\b/, 'strip').replace(/sheets?\b/, 'sheet').replace(/rolls?\b/, 'roll').trim();
+    return Number.isFinite(val) ? { val, unit, raw: s } : null;
+  }
+
+  /**
+   * Generates fallback mock rows from RAW_SPECS across DATES.
+   */
   function buildMockRecords() {
     const rows = [];
     try {
@@ -137,7 +159,9 @@
           });
         });
       });
-    } catch (e) {}
+    } catch (e) {
+      // Fallback safely if mock generation fails
+    }
     return rows;
   }
 
@@ -226,6 +250,9 @@
     return bestChange;
   }
 
+  /**
+   * Aggregates product history and watchlist rows by canonical product name within storeScope.
+   */
   function aggregateProducts(rows, storeScope) {
     const byProd = new Map();
     let maxRowMs = -Infinity;
@@ -398,18 +425,43 @@
     list.forEach(item => {
       const gKey = item.group || item.canonical;
       const isLow = item.isAtLowest ? 1 : 0;
+      const uInfo = parseUnitInfo(item.lowUnitPrice || item.bestUnitPrice);
       if (!groupStats.has(gKey)) {
-        groupStats.set(gKey, { maxDisc: item.discPct, maxLow: isLow, hasFav: !!item.sheetFav, name: gKey });
+        groupStats.set(gKey, {
+          maxDisc: item.discPct,
+          maxLow: isLow,
+          hasFav: !!item.sheetFav,
+          name: gKey,
+          minLowUnit: uInfo ? { ...uInfo, canonical: item.canonical, store: item.lowStore || item.bestNowStore } : null
+        });
       } else {
         const gs = groupStats.get(gKey);
         if (item.discPct > gs.maxDisc) gs.maxDisc = item.discPct;
         if (isLow > gs.maxLow) gs.maxLow = isLow;
         if (item.sheetFav) gs.hasFav = true;
+        if (uInfo) {
+          if (!gs.minLowUnit) {
+            gs.minLowUnit = { ...uInfo, canonical: item.canonical, store: item.lowStore || item.bestNowStore };
+          } else if ((!gs.minLowUnit.unit || !uInfo.unit || gs.minLowUnit.unit === uInfo.unit) && uInfo.val < gs.minLowUnit.val - 0.0001) {
+            gs.minLowUnit = { ...uInfo, canonical: item.canonical, store: item.lowStore || item.bestNowStore };
+          }
+        }
       }
     });
     list.forEach(item => {
       const gKey = item.group || item.canonical;
-      if (groupStats.get(gKey).hasFav) item.sheetFav = true;
+      const gs = groupStats.get(gKey);
+      if (gs.hasFav) item.sheetFav = true;
+      const ownUnit = parseUnitInfo(item.lowUnitPrice || item.bestUnitPrice);
+      if (gs.minLowUnit && ownUnit && (!gs.minLowUnit.unit || !ownUnit.unit || gs.minLowUnit.unit === ownUnit.unit) && gs.minLowUnit.val < ownUnit.val - 0.0001) {
+        item.hasLowerGroupUnit = true;
+        item.groupLowUnitLabel = gs.minLowUnit.raw;
+        item.groupLowUnitCanonical = gs.minLowUnit.canonical;
+      } else {
+        item.hasLowerGroupUnit = false;
+        item.groupLowUnitLabel = '';
+        item.groupLowUnitCanonical = '';
+      }
     });
 
     list.sort((a, b) => {
@@ -434,6 +486,9 @@
     return list;
   }
 
+  /**
+   * Renders a stepped price history chart with an RRP reference line in the expanded card drawer.
+   */
   function renderChartInCanvas(canvasEl, product) {
     if (!canvasEl || !product || typeof Chart === 'undefined') return;
     try {
@@ -517,6 +572,9 @@
     } catch (e) {}
   }
 
+  /**
+   * Parses CSV data from the Tracked Links tab into active link entries.
+   */
   function parseTrackedLinksCsv(text) {
     const lines = text.trim().split(/\r?\n/);
     if (lines.length < 2) return [];
@@ -558,6 +616,9 @@
     return out;
   }
 
+  /**
+   * Renders all header counters, Watchlist links view, or product cards with inline drawers.
+   */
   function renderAll() {
     try {
       const wlBtn = document.getElementById('watchlistBtn');
@@ -568,6 +629,7 @@
           : 'px-2 py-1 text-xs font-medium rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 transition';
       }
 
+      // Build combinedRows before allAgg and scopedProducts so unlogged watchlist items appear under All
       const combinedRows = allRows.slice();
       if (Array.isArray(trackedLinks) && trackedLinks.length > 0) {
         const hasLogForKey = new Set(allRows.map(r => `${r.canonical}::${r.retailer}`));
@@ -779,6 +841,10 @@
           ? `<div class="text-sm font-semibold text-emerald-300">$${p.low6m.toFixed(2)}</div>`
           : `<div class="text-xs font-medium text-neutral-400">—</div>`;
 
+        const groupLowUnitHtml = (isGroupTop && !isExpanded && p.hasLowerGroupUnit && p.groupLowUnitLabel)
+          ? `<div class="text-[10px] font-semibold text-cyan-300 mt-0.5" title="Cheaper lowest unit price in ${p.groupLowUnitCanonical}">Group low: ${p.groupLowUnitLabel}</div>`
+          : '';
+
         const change7dHtml = p.change7d
           ? (() => {
               const isDrop = p.change7d.delta < 0;
@@ -826,6 +892,7 @@
                   <div class="text-[10px] text-neutral-400">Lowest <span class="${lowStoreCls} font-semibold">(${lowStoreShort})</span></div>
                   ${lowPriceHtml}
                   ${p.lowUnitPrice ? `<div class="text-xs font-medium text-neutral-200 mt-0.5">${p.lowUnitPrice}</div>` : ''}
+                  ${groupLowUnitHtml}
                 </div>
               </div>
               ${change7dHtml}
@@ -967,6 +1034,9 @@
     }
   }
 
+  /**
+   * Parses History Log CSV text, skipping blank template rows while preserving Out of Stock entries.
+   */
   function parseCsv(text) {
     const lines = text.trim().split(/\r?\n/);
     if (lines.length < 2) return [];
@@ -1009,6 +1079,7 @@
       const rawRrpStr = idxRrp >= 0 ? (cols[idxRrp] || '').trim() : '';
       const promoStr = idxPromo >= 0 ? (cols[idxPromo] || '').trim() : '';
 
+      // Skip blank template rows lacking date, price, and promo/stock status
       if (!dateVal && !rawPriceStr && !promoStr) continue;
 
       const parsedPrice = parseFloat(rawPriceStr.replace(/[^0-9.]/g, ''));
@@ -1045,6 +1116,9 @@
     el.classList.remove('hidden');
   }
 
+  /**
+   * Fetches live History Log CSV and companion Tracked Links sheet from Google Sheets.
+   */
   async function loadSheetCsv(url) {
     try {
       const res = await fetch(url);
@@ -1072,6 +1146,7 @@
     }
   }
 
+  // Search, store tabs, favorites, watchlist, and sort listeners
   document.getElementById('searchInput').addEventListener('input', renderAll);
 
   const STORE_TAB_CLASSES = {
@@ -1125,6 +1200,7 @@
     renderAll();
   });
 
+  // CSV Modal open/close/load controls
   const modal = document.getElementById('csvModal');
   document.getElementById('openCsvModalBtn').addEventListener('click', () => {
     modal.classList.remove('hidden');
@@ -1157,6 +1233,7 @@
     loadSheetCsv(DEFAULT_SHEET_CSV);
   }
 
+  // Hide sticky header while scrolling down and bring it back when scrolling up
   let lastScrollY = window.scrollY;
   const topHeader = document.getElementById('topHeader');
   window.addEventListener('scroll', () => {
